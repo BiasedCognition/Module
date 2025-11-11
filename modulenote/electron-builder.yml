@@ -1,0 +1,37 @@
+# Electron Builder配置文件
+appId: com.modulenote.app
+productName: ModuleNote
+copyright: Copyright © 2024 ${author}
+
+# 打包输出目录
+directories:
+  output: dist-electron
+
+# 打包文件配置
+files:
+  - dist/**/*
+  - main.js
+  - preload.js
+  - package.json
+
+# 不同平台的打包配置
+win:
+  target: nsis
+  icon: public/favicon.ico
+
+mac:
+  target: dmg
+  icon: public/favicon.ico
+
+linux:
+  target: AppImage
+  icon: public/favicon.ico
+
+# NSIS安装程序配置（Windows平台）
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: true
+  installerIcon: public/favicon.ico
+  uninstallerIcon: public/favicon.ico
+  installerHeaderIcon: public/favicon.ico
