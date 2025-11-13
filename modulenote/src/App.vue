@@ -5,39 +5,69 @@ import SimpleDemo from './test/SimpleDemo.vue';
 import Sidebar from './components/Templates/Sidebar.vue';
 import { ObjectBase } from './components/Object/object';
 import { logger } from './services/logger';
+import {
+  useEventNode,
+  NotesChannels,
+  type ElementSelectionPayload,
+  type SelectionChangedPayload,
+  type SidebarExpandedPayload,
+  type SidebarContentUpdatedPayload,
+} from './Event';
 
 // 状态管理
 const selectedObject = ref<ObjectBase | null>(null);
 const sidebarExpanded = ref(false);
 
-// 处理元素双击事件
-const handleElementDoubleClick = (element: ObjectBase) => {
-  logger.info('元素被双击', { type: element.type, id: element.id });
-  selectedObject.value = element;
-  // 侧边栏会在接收到selectedObject后自动展开
+const eventNode = useEventNode({ tags: ['app-root'] });
+
+const emitSelectionChanged = async (element: ObjectBase | null) => {
+  await eventNode.emit(NotesChannels.SELECTION_CHANGED, { element });
 };
 
-// 处理侧边栏展开状态变化
-const handleSidebarExpandedChange = (expanded: boolean) => {
+eventNode.on(NotesChannels.ELEMENT_DOUBLE_CLICK, async ({ payload }) => {
+  const { element } =
+    (payload as ElementSelectionPayload) ?? { element: payload as ObjectBase };
+  if (!element) return;
+  logger.info('元素被双击', { type: element.type, id: element.id });
+  await emitSelectionChanged(element as ObjectBase);
+});
+
+eventNode.on(NotesChannels.SELECTION_CHANGED, ({ payload }) => {
+  const { element } =
+    (payload as SelectionChangedPayload) ?? {
+      element: (payload as ObjectBase | null) ?? null,
+    };
+  selectedObject.value = (element as ObjectBase) ?? null;
+});
+
+eventNode.on(NotesChannels.SIDEBAR_EXPANDED, ({ payload }) => {
+  const { expanded } =
+    (payload as SidebarExpandedPayload) ?? { expanded: Boolean(payload) };
   sidebarExpanded.value = expanded;
   logger.debug('侧边栏展开状态变化', { expanded });
-};
+});
 
-// 处理内容更新
-const handleContentUpdated = (object: ObjectBase, content: any) => {
+eventNode.on(NotesChannels.SIDEBAR_CONTENT_UPDATED, ({ payload }) => {
+  const { element, content } =
+    (payload as SidebarContentUpdatedPayload) ?? {
+      element: selectedObject.value,
+      content: payload,
+    };
+  if (!element) return;
   logger.debug('对象内容已更新', {
-    type: object.type,
-    id: object.id,
-    contentPreview: typeof content === 'string' ? content.slice(0, 120) : content,
+    type: (element as ObjectBase).type,
+    id: (element as ObjectBase).id,
+    contentPreview:
+      typeof content === 'string' ? content.slice(0, 120) : content,
   });
-};
+});
 
 // 提供给子组件使用的方法
 provide('registerElement', (element: HTMLElement, object: ObjectBase) => {
   // 这里可以添加额外的双击事件处理逻辑
   const handleDoubleClick = () => {
     logger.debug('注册元素双击事件', { type: object.type, id: object.id });
-    handleElementDoubleClick(object);
+    eventNode.emit(NotesChannels.ELEMENT_DOUBLE_CLICK, { element: object });
   };
   
   element.addEventListener('dblclick', handleDoubleClick);
@@ -66,11 +96,7 @@ provide('registerElement', (element: HTMLElement, object: ObjectBase) => {
     </div>
     
     <!-- 边栏组件 - 始终存在 -->
-    <Sidebar
-      :selected-object="selectedObject"
-      @content-updated="handleContentUpdated"
-      @expanded-change="handleSidebarExpandedChange"
-    />
+    <Sidebar />
   </div>
 </template>
 

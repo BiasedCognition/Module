@@ -80,38 +80,35 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue';
+import { ref, computed } from 'vue';
 import { ObjectBase } from '../Object/object';
+import {
+  useEventNode,
+  NotesChannels,
+  type SelectionChangedPayload,
+  type SidebarExpandedPayload,
+  type SidebarContentUpdatedPayload,
+} from '@/Event';
 
-// Props
-interface Props {
-  selectedObject: ObjectBase | null;
-}
+const eventNode = useEventNode({ tags: ['sidebar'] });
 
-const props = defineProps<Props>();
-
-// Emits
-interface Emits {
-  contentUpdated: [object: ObjectBase, content: any];
-  expandedChange: [expanded: boolean];
-}
-
-const emit = defineEmits<Emits>();
-
-// Local state
+const selectedObject = ref<ObjectBase | null>(null);
 const contentText = ref('');
 const expanded = ref(false);
 const displayText = ref('');
 const textColor = ref('#1f2937');
 
 const supportsDisplayText = computed(() => {
-  const obj = props.selectedObject as any;
+  const obj = selectedObject.value as any;
   return !!(obj && typeof obj.displayText === 'string');
 });
 
 const supportsTextColor = computed(() => {
-  const obj = props.selectedObject as any;
-  return !!(obj && (typeof obj.textColor === 'string' || typeof obj.getTextColor === 'function'));
+  const obj = selectedObject.value as any;
+  return !!(
+    obj &&
+    (typeof obj.textColor === 'string' || typeof obj.getTextColor === 'function')
+  );
 });
 
 const colorPalette = [
@@ -127,101 +124,94 @@ const colorPalette = [
   '#8b5cf6',
   '#ec4899',
   '#14b8a6',
-  '#f8fafc'
+  '#f8fafc',
 ];
 
-// Watch for selected object changes
-watch(() => props.selectedObject, (newObject) => {
-  if (newObject) {
-    // 自动展开侧边栏
-    expanded.value = true;
-    // 确保对象有getContent方法
-    if (typeof (newObject as any).getContent === 'function') {
-      const content = (newObject as any).getContent();
-      contentText.value = typeof content === 'object' ? JSON.stringify(content, null, 2) : String(content);
-    } else {
-      contentText.value = '';
-    }
+const emitExpandedState = (value: boolean) => {
+  eventNode.emit(NotesChannels.SIDEBAR_EXPANDED, { expanded: value });
+};
 
-    if (supportsDisplayText.value) {
-      displayText.value = (newObject as any).displayText || '';
-    } else {
-      displayText.value = '';
-    }
+const setExpanded = (value: boolean) => {
+  if (expanded.value === value) return;
+  expanded.value = value;
+  emitExpandedState(value);
+};
 
-    if (supportsTextColor.value) {
-      const target: any = newObject;
-      if (typeof target.getTextColor === 'function') {
-        textColor.value = target.getTextColor() || '#1f2937';
-      } else {
-        textColor.value = target.textColor || '#1f2937';
-      }
-    } else {
-      textColor.value = '#1f2937';
-    }
+const readObjectContent = (target: any) => {
+  if (typeof target?.getContent === 'function') {
+    const content = target.getContent();
+    contentText.value =
+      typeof content === 'object'
+        ? JSON.stringify(content, null, 2)
+        : String(content ?? '');
+  } else {
+    contentText.value = '';
+  }
+
+  if (typeof target?.displayText === 'string') {
+    displayText.value = target.displayText ?? '';
+  } else {
+    displayText.value = '';
+  }
+
+  if (typeof target?.getTextColor === 'function') {
+    textColor.value = target.getTextColor() || '#1f2937';
+  } else if (typeof target?.textColor === 'string') {
+    textColor.value = target.textColor || '#1f2937';
+  } else {
+    textColor.value = '#1f2937';
+  }
+};
+
+const applySelectedObject = (object: ObjectBase | null) => {
+  selectedObject.value = object;
+  if (object) {
+    setExpanded(true);
+    readObjectContent(object as any);
   } else {
     contentText.value = '';
     displayText.value = '';
     textColor.value = '#1f2937';
   }
-}, { immediate: true });
+};
 
-// 监听展开状态变化并通知父组件
-watch(expanded, (newValue) => {
-  emit('expandedChange', newValue);
-}, { immediate: true });
+eventNode.on(NotesChannels.SELECTION_CHANGED, ({ payload }) => {
+  const { element } =
+    (payload as SelectionChangedPayload) ?? { element: payload };
+  applySelectedObject((element as ObjectBase) ?? null);
+});
 
 // Methods
 const toggleExpanded = () => {
-  expanded.value = !expanded.value;
-  emit('expandedChange', expanded.value);
+  setExpanded(!expanded.value);
 };
 
 const updateContent = () => {
-  if (props.selectedObject) {
-    // 确保对象有setContent方法
-    if (typeof (props.selectedObject as any).setContent === 'function') {
-      let content;
-      try {
-        // 尝试解析JSON
-        content = JSON.parse(contentText.value);
-      } catch (e) {
-        // 如果不是有效的JSON，则使用原始字符串
-        content = contentText.value;
-      }
-      (props.selectedObject as any).setContent(content);
-      emit('contentUpdated', props.selectedObject, content);
+  if (!selectedObject.value) return;
+  const target: any = selectedObject.value;
+  if (typeof target.setContent === 'function') {
+    let content;
+    try {
+      content = JSON.parse(contentText.value);
+    } catch (e) {
+      content = contentText.value;
     }
+    target.setContent(content);
+    eventNode.emit(NotesChannels.SIDEBAR_CONTENT_UPDATED, {
+      element: selectedObject.value,
+      content,
+    } satisfies SidebarContentUpdatedPayload);
   }
 };
 
 const refreshSelectedObject = () => {
-  if (!props.selectedObject) return;
-  const target = props.selectedObject as any;
-
-  if (typeof target.getContent === 'function') {
-    const content = target.getContent();
-    contentText.value = typeof content === 'object'
-      ? JSON.stringify(content, null, 2)
-      : String(content ?? '');
-  }
-
-  if (supportsDisplayText.value) {
-    displayText.value = target.displayText || '';
-  }
-
-  if (supportsTextColor.value) {
-    if (typeof target.getTextColor === 'function') {
-      textColor.value = target.getTextColor() || '#1f2937';
-    } else {
-      textColor.value = target.textColor || '#1f2937';
-    }
-  }
+  if (!selectedObject.value) return;
+  readObjectContent(selectedObject.value as any);
 };
 
 const updateDisplayText = () => {
-  if (!props.selectedObject || !supportsDisplayText.value) return;
-  const target: any = props.selectedObject;
+  if (!selectedObject.value || !supportsDisplayText.value) return;
+  const target: any = selectedObject.value;
   if (typeof target.setDisplayText === 'function') {
     target.setDisplayText(displayText.value);
   } else {
@@ -230,9 +220,9 @@ const updateDisplayText = () => {
 };
 
 const updateTextColor = (color: string) => {
-  if (!props.selectedObject || !supportsTextColor.value) return;
+  if (!selectedObject.value || !supportsTextColor.value) return;
   textColor.value = color;
-  const target: any = props.selectedObject;
+  const target: any = selectedObject.value;
   if (typeof target.setTextColor === 'function') {
     target.setTextColor(color);
   } else {
