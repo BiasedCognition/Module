@@ -32,6 +32,7 @@
 import { ref, watch, onMounted, onUnmounted, inject, computed, nextTick } from 'vue';
 import { marked } from 'marked';
 import type { ObjectBase } from '../Object/object';
+import { useEventNode, NotesChannels } from '@/Event';
 
 // Props定义
 const props = defineProps<{
@@ -77,10 +78,12 @@ let cleanupDoubleClick: (() => void) | null = null;
 const isEditing = ref(false);
 const editableText = ref('');
 const originalText = ref('');
+const eventNode = useEventNode({ tags: ['element'] });
 
 // 方法
 const handleClick = () => {
   emit('click', props.element);
+  eventNode.emit(NotesChannels.ELEMENT_CLICK, { element: props.element });
 };
 
 const startEditing = () => {
@@ -123,6 +126,7 @@ const handleDoubleClick = () => {
     startEditing();
   }
   emit('dblclick', props.element);
+  eventNode.emit(NotesChannels.ELEMENT_DOUBLE_CLICK, { element: props.element });
 };
 
 const handleFocus = () => {
@@ -209,6 +213,11 @@ const performSplit = () => {
   isEditing.value = false;
 
   emit('split', {
+    element: props.element,
+    beforeText,
+    afterText,
+  });
+  eventNode.emit(NotesChannels.ELEMENT_SPLIT, {
     element: props.element,
     beforeText,
     afterText,

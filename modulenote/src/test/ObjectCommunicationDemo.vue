@@ -12,9 +12,6 @@
           ref="textboxRef"
           :mode="textboxMode"
           :placeholder="'点击下方按钮添加元素到容器中'"
-          @elements-change="handleElementsChange"
-          @mode-change="handleTextboxModeChange"
-          @element-dblclick="handleElementDoubleClick"
         ></TextboxComponent>
         
         <!-- 控制按钮 -->
@@ -91,6 +88,7 @@ import { Textbox } from '../components/Object/textbox';
 import { Element } from '../components/Object/element';
 import TextboxComponent from '../components/Templates/Textbox.vue';
 import TemplateButton from '../components/Templates/Button.vue';
+import { useEventNode, NotesChannels } from '@/Event';
 
 // 文本框相关状态
 const textboxMode = ref<'view' | 'edit'>('edit');
@@ -98,6 +96,7 @@ const textboxRef = ref();
 const textboxElements = ref<Element[]>([]);
 const selectedElement = ref<Element | null>(null);
 const lastUpdateTime = ref('');
+const eventNode = useEventNode({ tags: ['object-demo'] });
 
 // 通信日志
 const communicationLogs = ref<Array<{
@@ -128,17 +127,32 @@ function addCommunicationLog(type: string, message: string) {
   lastUpdateTime.value = log.timestamp;
 }
 
-// 处理文本框模式变更
-function handleTextboxModeChange(mode: 'view' | 'edit') {
-  textboxMode.value = mode;
-  addCommunicationLog('Textbox', `模式变更为: ${mode}`);
-}
+// emits 监听移除，统一改由事件系统更新
 
-// 处理元素变更
-function handleElementsChange(elements: Element[]) {
-  textboxElements.value = elements;
-  addCommunicationLog('Textbox', `元素列表已更新，当前元素数量: ${elements.length}`);
-}
+// 事件系统监听（双发布阶段）
+eventNode.on(NotesChannels.ELEMENT_DOUBLE_CLICK, ({ payload }) => {
+  const { element } = payload as any;
+  if (element) {
+    selectedElement.value = element as Element;
+    addCommunicationLog('EventBus', `双击元素: ${(element as Element).elementId}`);
+  }
+});
+
+eventNode.on(NotesChannels.ELEMENTS_CHANGE, ({ payload }) => {
+  const { elements } = payload as any;
+  if (Array.isArray(elements)) {
+    textboxElements.value = elements as Element[];
+    addCommunicationLog('EventBus', `元素列表更新（事件总线）: ${elements.length}`);
+  }
+});
+
+eventNode.on(NotesChannels.TEXTBOX_MODE_CHANGE, ({ payload }) => {
+  const { mode } = payload as any;
+  if (mode === 'view' || mode === 'edit') {
+    textboxMode.value = mode;
+    addCommunicationLog('EventBus', `模式变更（事件总线）为: ${mode}`);
+  }
+});
 
 // 切换文本框模式
 function toggleTextboxMode() {
@@ -207,11 +221,7 @@ function clearTextboxElements() {
   addCommunicationLog('Demo', '已清空文本框中的所有元素');
 }
 
-// 处理元素双击
-function handleElementDoubleClick(element: Element) {
-  selectedElement.value = element;
-  addCommunicationLog('Demo', `双击元素: ${element.elementId}`);
-}
+// emits 监听移除，统一改由事件系统更新
 
 // 获取元素类型的中文名称
 function getElementTypeName(type: string): string {

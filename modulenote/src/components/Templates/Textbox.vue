@@ -47,6 +47,10 @@ import { ObjectBase } from '../Object/object';
 import { Element } from '../Object/element';
 import TemplateButton from './Button.vue';
 import ElementComponent from './Element.vue';
+import {
+  useEventNode,
+  NotesChannels,
+} from '@/Event';
 
 // Props 定义
 interface Props {
@@ -82,6 +86,7 @@ const buttonStates = reactive<Record<string, boolean>>({
   mode: false
 });
 const elements = ref<Element[]>([]);
+const eventNode = useEventNode({ tags: ['textbox'] });
 
 // 计算属性
 const actionButtons = computed(() => {
@@ -135,6 +140,7 @@ function updateElementsList() {
   if (!textboxInstance.value) return;
   elements.value = textboxInstance.value.getElements();
   emit('elements-change', elements.value);
+  eventNode.emit(NotesChannels.ELEMENTS_CHANGE, { elements: elements.value });
 }
 
 watch(() => props.mode, (newMode) => {
@@ -160,6 +166,7 @@ function addElement(element: Element) {
   textboxInstance.value.addElement(element);
   updateElementsList();
   emit('element-add', element);
+  eventNode.emit(NotesChannels.ELEMENT_ADD, { element });
 }
 
 // 移除元素
@@ -169,6 +176,7 @@ function removeElement(elementId: string) {
   textboxInstance.value.removeElement(elementId);
   updateElementsList();
   emit('element-remove', elementId);
+  eventNode.emit(NotesChannels.ELEMENT_REMOVE, { elementId });
 }
 
 // 清空所有元素
@@ -182,11 +190,13 @@ function clearElements() {
 // 处理元素点击
 function handleElementClick(element: Element) {
   emit('element-click', element);
+  eventNode.emit(NotesChannels.ELEMENT_CLICK, { element });
 }
 
 // 处理元素双击
 function handleElementDoubleClick(element: Element) {
   emit('element-dblclick', element);
+  eventNode.emit(NotesChannels.ELEMENT_DOUBLE_CLICK, { element });
 }
 
 // 处理元素移除
@@ -207,7 +217,9 @@ function handleElementSplit(payload: ElementSplitPayload) {
   updateElementsList();
   if (newElement) {
     emit('element-add', newElement);
+    eventNode.emit(NotesChannels.ELEMENT_ADD, { element: newElement });
   }
+  eventNode.emit(NotesChannels.ELEMENT_SPLIT, payload);
 }
 
 // 处理工具栏按钮点击
@@ -224,6 +236,7 @@ function handleToolbarButtonClick(event: MouseEvent, button: any) {
   if (buttonType === 'mode') {
     currentMode.value = textboxInstance.value.mode;
     emit('mode-change', currentMode.value);
+    eventNode.emit(NotesChannels.TEXTBOX_MODE_CHANGE, { mode: currentMode.value });
   }
 }
 

@@ -677,6 +677,28 @@ eventNode.on(NotesChannels.SELECTION_CHANGED, ({ payload }) => {
 });
 ```
 
+### 渐进式迁移与关闭 emits
+
+为降低改动风险，建议采用“双发布”与“按模块关闭”的策略：
+
+1) 双发布阶段（已完成）
+- 在核心组件（如 `Textbox.vue`、`Element.vue`）内同时保留原有 `emit(...)` 与新的 `eventNode.emit(...)`。
+- 在使用方（如 `SimpleDemo.vue`、`ObjectCommunicationDemo.vue`）新增对 `NotesChannels` 的订阅以同步状态；随后删除模板中的 `@elements-change`、`@element-dblclick` 等监听，从此仅依赖事件系统。
+- 本仓库已完成 Demo 的切换：Demo 组件完全依赖事件系统，模板中不再绑定 `@elements-change`/`@mode-change`/`@element-dblclick` 等。
+
+2) 按模块关闭 emits
+- 观察一段时间确认无功能回退后，逐模块移除核心组件中的 `defineEmits` 与所有 `emit(...)` 调用，仅保留 `eventNode.emit(...)`。
+- 同时清理不再使用的 props/事件类型声明，维护更简洁的组件 API。
+
+3) 验收清单
+- 页面行为一致：元素点击/双击、添加/删除、列表变更、模式切换、侧栏同步等均正常。
+- 调试可见：`EventLogger` 中可看到事件路径与 Hub 链路，过滤与标签可按需开启。
+- 性能无回退：订阅数量与频次符合预期，无明显重复处理。
+
+4) 参考落地示例
+- Demo 已完全改用事件系统，供对照：`modulenote/src/test/SimpleDemo.vue`、`modulenote/src/test/ObjectCommunicationDemo.vue`。
+- 应用层面已将 `App.vue`、`Sidebar.vue` 完成替换并联调通过。
+
 ## 未来扩展方向
 
 1. **类型增强**：实现类型安全的事件通道定义

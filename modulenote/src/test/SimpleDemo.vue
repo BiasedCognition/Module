@@ -12,11 +12,6 @@
           ref="textboxRef"
           :mode="demoMode"
           :placeholder="'暂无元素，请点击下方按钮添加元素'"
-          @elements-change="handleElementsChange"
-          @element-click="handleElementClick"
-          @element-dblclick="handleElementDoubleClick"
-          @element-add="handleElementAdd"
-          @element-remove="handleElementRemove"
         ></template-textbox>
       </div>
       
@@ -94,6 +89,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue';
+import { useEventNode, NotesChannels } from '@/Event';
 import { Textbox } from '../components/Object/textbox';
 import { Element } from '../components/Object/element';
 import { tButton } from '../components/Object/Button';
@@ -108,6 +104,7 @@ const textboxRef = ref();
 const elements = ref<Element[]>([]);
 // 选中的元素
 const selectedElement = ref<Element | null>(null);
+const eventNode = useEventNode({ tags: ['simple-demo'] });
 
 // 切换模式
 function toggleMode() {
@@ -179,6 +176,21 @@ function handleElementsChange(newElements: Element[]) {
   elements.value = newElements;
   console.log('元素列表已更新:', elements.value.length, '个元素');
 }
+
+// 事件系统监听（双发布阶段保持并行）
+eventNode.on(NotesChannels.ELEMENT_CLICK, ({ payload }) => {
+  const { element } = payload as any;
+  if (element) {
+    selectedElement.value = element as Element;
+  }
+});
+
+eventNode.on(NotesChannels.TEXTBOX_MODE_CHANGE, ({ payload }) => {
+  const { mode } = payload as any;
+  if (mode === 'view' || mode === 'edit') {
+    demoMode.value = mode;
+  }
+});
 
 // 处理元素点击
 function handleElementClick(element: Element) {
