@@ -2,6 +2,7 @@
   <div 
     ref="rootRef"
     class="element-component"
+    :style="isEditing ? { maxWidth: editMaxWidthPx + 'px', flex: '0 0 auto' } : undefined"
     @click="handleClick"
     @dblclick="handleDoubleClick"
   >
@@ -79,6 +80,7 @@ const isEditing = ref(false);
 const editableText = ref('');
 const originalText = ref('');
 const eventNode = useEventNode({ tags: ['element'] });
+const editMaxWidthPx = ref(0);
 
 // 方法
 const handleClick = () => {
@@ -88,6 +90,14 @@ const handleClick = () => {
 
 const startEditing = () => {
   if (isReadOnly.value) return;
+  // 限制编辑期最大宽度为“本行剩余空间”，允许在该范围内自适应，不挤到下一行
+  const remaining = computeRemainingWidthInLine();
+  if (remaining && remaining > 0) {
+    editMaxWidthPx.value = Math.round(remaining);
+  } else {
+    const rect = rootRef.value?.getBoundingClientRect();
+    editMaxWidthPx.value = Math.max(1, Math.round(rect?.width || 0));
+  }
   isEditing.value = true;
   originalText.value = displayTextValue.value ?? '';
   editableText.value = originalText.value;
@@ -108,6 +118,11 @@ const commitEdit = () => {
   syncDisplayText(newValue);
   originalText.value = newValue;
   isEditing.value = false;
+  editMaxWidthPx.value = 0;
+  // 提交后再根据宽度检查并进行拆分（输入过程中不拆分）
+  nextTick(() => {
+    checkWrapAndSplitForCurrentLine();
+  });
 };
 
 const cancelEdit = () => {
@@ -119,6 +134,7 @@ const cancelEdit = () => {
   }
   syncDisplayText(originalText.value);
   isEditing.value = false;
+  editMaxWidthPx.value = 0;
 };
 
 const handleDoubleClick = () => {
@@ -187,6 +203,147 @@ const placeCaretAtEnd = (element: HTMLElement) => {
   selection?.removeAllRanges();
   selection?.addRange(range);
 };
+
+// 自动分割：根据宽度溢出自动切分为两段
+const getDisplayClientWidth = (): number => {
+  const el = rootRef.value;
+  if (!el) return 0;
+  // 目标是内部文本容器宽度
+  const textEl = isEditing.value ? editorRef.value : el.querySelector('.element-display-text') as HTMLElement | null;
+  return (textEl?.clientWidth ?? el.clientWidth) || 0;
+};
+
+const getDisplayScrollWidth = (): number => {
+  const el = rootRef.value;
+  if (!el) return 0;
+  const textEl = isEditing.value ? editorRef.value : el.querySelector('.element-display-text') as HTMLElement | null;
+  return (textEl?.scrollWidth ?? el.scrollWidth) || 0;
+};
+
+const measureTextWidth = (text: string): number => {
+  const el = document.createElement('span');
+  el.className = 'element-display-text';
+  el.style.visibility = 'hidden';
+  el.style.position = 'absolute';
+  el.style.whiteSpace = 'nowrap';
+  el.style.pointerEvents = 'none';
+  el.textContent = text || '';
+  document.body.appendChild(el);
+  const width = el.offsetWidth;
+  document.body.removeChild(el);
+  return width;
+};
+
+const autoSplitAt = (splitIndex: number) => {
+  const raw = (editableText.value || displayTextValue.value || '') as string;
+  const beforeText = raw.slice(0, splitIndex);
+  const afterText = raw.slice(splitIndex);
+  editableText.value = beforeText;
+  originalText.value = beforeText;
+  syncDisplayText(beforeText);
+  setElementColor(textColor.value);
+  isEditing.value = false;
+  emit('split', {
+    element: props.element,
+    beforeText,
+    afterText,
+  });
+  eventNode.emit(NotesChannels.ELEMENT_SPLIT, {
+    element: props.element,
+    beforeText,
+    afterText,
+  });
+};
+
+const checkOverflowAndMaybeSplit = () => {
+  // 单行模式下，当内容宽度超过容器最大宽度时触发分割
+  const clientW = getDisplayClientWidth();
+  const scrollW = getDisplayScrollWidth();
+  if (!clientW || !scrollW) return;
+  if (scrollW <= clientW) return;
+
+  // 二分查找最大可容纳前缀
+  const raw = (editableText.value || displayTextValue.value || '') as string;
+  if (!raw) return;
+  let lo = 1;
+  let hi = raw.length;
+  let ans = 1;
+  // 预留4px安全边距，避免边框与padding影响
+  const limit = Math.max(0, clientW - 4);
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const width = measureTextWidth(raw.slice(0, mid));
+    if (width <= limit) {
+      ans = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (ans < raw.length) {
+    autoSplitAt(ans);
+  }
+};
+
+// 计算当前行剩余空间，并尽可能填充当前行后再拆分
+const parsePx = (v: string | null): number => {
+  if (!v) return 0;
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const computeRemainingWidthInLine = (): number => {
+  const el = rootRef.value;
+  if (!el) return 0;
+  // 父容器（elements-container）
+  const container = el.closest('.elements-container') as HTMLElement | null;
+  if (!container) return 0;
+
+  const containerRect = container.getBoundingClientRect();
+  const selfRect = el.getBoundingClientRect();
+  const cs = getComputedStyle(container);
+  const colGap = parsePx(cs.columnGap) || 0;          // 与下一元素的水平间隔
+  const padRight = parsePx(cs.paddingRight) || 0;      // 容器右内边距
+  const borderRight = parsePx(cs.borderRightWidth) || 0; // 容器右边框
+
+  // 预留安全边距：右侧列间距 + 1px 容错（避免亚像素换行）
+  const epsilon = Math.ceil(colGap) + 1;
+  const remaining = containerRect.right - selfRect.left - padRight - borderRight - epsilon;
+  return Math.max(0, Math.floor(remaining));
+};
+
+const checkWrapAndSplitForCurrentLine = () => {
+  // 若整段文本宽度大于当前行剩余空间，则将前缀填满当前行后拆分
+  const raw = (editableText.value || displayTextValue.value || '') as string;
+  if (!raw) return;
+  const totalWidth = measureTextWidth(raw);
+  // 对剩余宽度再扣除当前显示块自身右侧的内边距与圆角误差，避免略超导致换行
+  const remaining = Math.max(0, computeRemainingWidthInLine() - 2);
+  if (!remaining) return;
+  if (totalWidth <= remaining) return; // 全部可放入当前行，不拆分
+
+  // 在 remaining 范围内二分查找最大可容纳前缀
+  let lo = 1;
+  let hi = raw.length;
+  let ans = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const width = measureTextWidth(raw.slice(0, mid));
+    if (width <= remaining) {
+      ans = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  // 若一个字符都放不下，允许该元素整体换到下一行，不进行拆分
+  if (ans <= 0) return;
+  if (ans < raw.length) {
+    autoSplitAt(ans);
+  }
+};
+
+let resizeObserver: ResizeObserver | null = null;
 
 const performSplit = () => {
   const editor = editorRef.value;
@@ -271,11 +428,14 @@ onMounted(() => {
     cleanupDoubleClick = registerElement(rootRef.value, props.element as ObjectBase);
   }
   editableText.value = displayTextValue.value ?? '';
+  // 不在输入过程中自动拆分；移除尺寸变化时的自动拆分，仅在提交时处理
 });
 
 onUnmounted(() => {
   cleanupDoubleClick?.();
   cleanupDoubleClick = null;
+  resizeObserver?.disconnect();
+  resizeObserver = null;
 });
 </script>
 
@@ -299,7 +459,9 @@ onUnmounted(() => {
   background-color: rgba(33, 150, 243, 0.08);
   color: #1f2937;
   transition: background-color 0.2s ease, color 0.2s ease;
-  word-break: break-word;
+  /* 单行显示，超出触发自动分割 */
+  white-space: nowrap;
+  overflow: hidden;
   max-width: 100%;
 }
 
@@ -307,7 +469,9 @@ onUnmounted(() => {
   border: 1px solid rgba(59, 130, 246, 0.4);
   background-color: #ffffff;
   box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15);
-  white-space: pre-wrap;
+  /* 编辑态也保持单行 */
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .element-display-text--editing:focus {

@@ -2,6 +2,7 @@
 import { ref, provide } from 'vue';
 import ObjectCommunicationDemo from './test/ObjectCommunicationDemo.vue';
 import SimpleDemo from './test/SimpleDemo.vue';
+import SplitLineFillDemo from './test/SplitLineFillDemo.vue';
 import Sidebar from './components/Templates/Sidebar.vue';
 import { ObjectBase } from './components/Object/object';
 import { logger } from './services/logger';
@@ -92,6 +93,11 @@ provide('registerElement', (element: HTMLElement, object: ObjectBase) => {
       <div>
         <h2 class="text-2xl font-semibold mb-4">Textbox元素容器功能演示</h2>
         <SimpleDemo />
+      </div>
+
+      <div class="mt-10">
+        <h2 class="text-2xl font-semibold mb-4">单行填充并在回车提交后拆分 Demo</h2>
+        <SplitLineFillDemo />
       </div>
     </div>
     

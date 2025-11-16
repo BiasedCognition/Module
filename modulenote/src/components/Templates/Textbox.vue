@@ -14,12 +14,33 @@
         >
           <span class="button-icon" :class="currentMode === 'edit' ? 'icon-eye' : 'icon-edit'"></span>
         </template-button>
+
+        <!-- 手动刷新重排 -->
+        <template-button
+          :label="''"
+          type="reflow"
+          class="icon-button"
+          @click="handleManualReflow"
+        >
+          <span class="button-icon" title="刷新重排">↻</span>
+        </template-button>
+
+        <!-- 自动刷新开关 -->
+        <template-button
+          :label="''"
+          type="auto-reflow"
+          class="icon-button"
+          @click="toggleAutoReflow"
+          :class="{ active: autoReflowEnabled }"
+        >
+          <span class="button-icon" :title="autoReflowEnabled ? '关闭自动刷新' : '开启自动刷新'">⚙</span>
+        </template-button>
       </div>
     </div>
     
     <!-- 元素容器区域 -->
     <div class="textbox-content">
-      <div class="elements-container">
+      <div class="elements-container" ref="containerRef">
         <template v-if="elements.length > 0">
           <element-component
             v-for="element in elements"
@@ -41,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, reactive, inject } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, reactive, inject, nextTick } from 'vue';
 import { Textbox } from '../Object/textbox';
 import { ObjectBase } from '../Object/object';
 import { Element } from '../Object/element';
@@ -87,6 +108,8 @@ const buttonStates = reactive<Record<string, boolean>>({
 });
 const elements = ref<Element[]>([]);
 const eventNode = useEventNode({ tags: ['textbox'] });
+const containerRef = ref<HTMLElement | null>(null);
+const autoReflowEnabled = ref(false);
 
 // 计算属性
 const actionButtons = computed(() => {
@@ -141,6 +164,10 @@ function updateElementsList() {
   elements.value = textboxInstance.value.getElements();
   emit('elements-change', elements.value);
   eventNode.emit(NotesChannels.ELEMENTS_CHANGE, { elements: elements.value });
+  if (autoReflowEnabled.value) {
+    // 在 DOM 更新后尝试重排，最多数次以避免死循环
+    nextTick(() => reflowUntilStable(6));
+  }
 }
 
 watch(() => props.mode, (newMode) => {
@@ -222,6 +249,180 @@ function handleElementSplit(payload: ElementSplitPayload) {
   eventNode.emit(NotesChannels.ELEMENT_SPLIT, payload);
 }
 
+// ====== 重排：从前往后尝试将下一行首元素的前缀塞回上一行 ======
+function parsePx(v: string | null): number {
+  if (!v) return 0;
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function getEffectiveRight(container: HTMLElement): number {
+  const rect = container.getBoundingClientRect();
+  const cs = getComputedStyle(container);
+  const colGap = Math.ceil(parsePx(cs.columnGap) || 0);
+  const padRight = parsePx(cs.paddingRight) || 0;
+  const borderRight = parsePx(cs.borderRightWidth) || 0;
+  const epsilon = colGap + 1;
+  return rect.right - padRight - borderRight - epsilon;
+}
+
+function groupLinesByTop(items: HTMLElement[]): HTMLElement[][] {
+  const lines: HTMLElement[][] = [];
+  const threshold = 4; // 容忍像素
+  for (const el of items) {
+    const rect = el.getBoundingClientRect();
+    const top = rect.top;
+    const line = lines.find(arr => {
+      if (arr.length === 0) return false;
+      const t = arr[0].getBoundingClientRect().top;
+      return Math.abs(t - top) <= threshold;
+    });
+    if (line) line.push(el);
+    else lines.push([el]);
+  }
+  return lines.map(l => l.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left));
+}
+
+function measureLikeDisplay(text: string, sampleDisplay?: HTMLElement | null): number {
+  const span = document.createElement('span');
+  span.style.visibility = 'hidden';
+  span.style.position = 'absolute';
+  span.style.whiteSpace = 'nowrap';
+  span.style.pointerEvents = 'none';
+  span.textContent = text || '';
+  document.body.appendChild(span);
+  let w = span.offsetWidth;
+  document.body.removeChild(span);
+  // 尽量复用真实样式的水平内边距，弥补 scoped 样式导致的测量偏差
+  if (sampleDisplay) {
+    const cs = getComputedStyle(sampleDisplay);
+    const pl = parsePx(cs.paddingLeft);
+    const pr = parsePx(cs.paddingRight);
+    w += pl + pr;
+  } else {
+    // 默认与 .element-display-text 一致的左右 padding 8px
+    w += 16;
+  }
+  return w;
+}
+
+function getElementText(el: Element): string {
+  // 尝试从对象读取 displayText
+  // @ts-ignore
+  return (typeof el.getDisplayText === 'function' ? el.getDisplayText() : (el as any).displayText) ?? '';
+}
+
+function setElementText(el: Element, text: string) {
+  if (typeof (el as any).setDisplayText === 'function') {
+    (el as any).setDisplayText(text);
+  } else {
+    // @ts-ignore
+    (el as any).displayText = text;
+    (el as any).setContent?.(text);
+  }
+}
+
+function cloneForPrefixFrom(el: Element, prefix: string): Element {
+  const textColor = typeof (el as any).getTextColor === 'function' ? (el as any).getTextColor() : (el as any).textColor;
+  const newEl = new Element();
+  setElementText(newEl, prefix);
+  if (typeof (newEl as any).setTextColor === 'function') {
+    (newEl as any).setTextColor(textColor);
+  } else {
+    // @ts-ignore
+    (newEl as any).textColor = textColor;
+  }
+  return newEl;
+}
+
+function reflowFillPreviousLine() {
+  const container = containerRef.value;
+  if (!container || !textboxInstance.value) return;
+  const nodes = Array.from(container.querySelectorAll<HTMLElement>('.element-component'));
+  if (nodes.length === 0) return;
+
+  const lines = groupLinesByTop(nodes);
+  if (lines.length <= 1) return;
+
+  const effectiveRight = getEffectiveRight(container);
+  const instance = textboxInstance.value;
+  let changed = false;
+
+  for (let i = 1; i < lines.length; i++) {
+    const prevLine = lines[i - 1];
+    const currLine = lines[i];
+    if (prevLine.length === 0 || currLine.length === 0) continue;
+    const prevRight = Math.max(...prevLine.map(n => n.getBoundingClientRect().right));
+    let remaining = Math.floor(effectiveRight - prevRight);
+    if (remaining <= 6) continue;
+
+    // 找到当前行第一个元素对应的数据对象
+    const firstNode = currLine[0];
+    const firstIndex = nodes.indexOf(firstNode);
+    if (firstIndex < 0) continue;
+    const elementObj = elements.value[firstIndex];
+    if (!elementObj) continue;
+    const sampleDisplay = firstNode.querySelector('.element-display-text') as HTMLElement | null;
+
+    const raw = getElementText(elementObj) ?? '';
+    if (!raw) continue;
+    // 二分查找最大可放入的前缀
+    let lo = 1, hi = raw.length, ans = 0;
+    remaining = Math.max(0, remaining - 2); // 安全边距
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const w = measureLikeDisplay(raw.slice(0, mid), sampleDisplay);
+      if (w <= remaining) { ans = mid; lo = mid + 1; } else { hi = mid - 1; }
+    }
+    if (ans <= 0) continue;
+    if (ans >= raw.length) continue;
+
+    const before = raw.slice(0, ans);
+    const after = raw.slice(ans);
+
+    // 在数据层插入一个新元素到 firstIndex 之前
+    const newEl = cloneForPrefixFrom(elementObj, before);
+    instance.elements.splice(firstIndex, 0, newEl);
+    // 当前元素文本改为剩余部分
+    setElementText(elementObj, after);
+
+    changed = true;
+    // 更新视图与事件
+    updateElementsList();
+    eventNode.emit(NotesChannels.ELEMENT_ADD, { element: newEl });
+    eventNode.emit(NotesChannels.ELEMENT_SPLIT, { element: elementObj, beforeText: before, afterText: after });
+    break; // 单次移动后退出本轮，避免索引失配；可多次点击继续“刷新”
+  }
+
+  if (!changed) {
+    // 无可重排，忽略
+  }
+}
+
+function reflowUntilStable(maxSteps = 6) {
+  let steps = 0;
+  const run = () => {
+    if (steps >= maxSteps) return;
+    const before = containerRef.value?.innerHTML.length ?? 0;
+    reflowFillPreviousLine();
+    nextTick(() => {
+      const after = containerRef.value?.innerHTML.length ?? 0;
+      steps += 1;
+      // 粗略检测是否有结构变化；若有，继续下一轮
+      if (before !== after) run();
+    });
+  };
+  run();
+}
+
+function handleManualReflow() {
+  reflowUntilStable(6);
+}
+
+function toggleAutoReflow() {
+  autoReflowEnabled.value = !autoReflowEnabled.value;
+}
+
 // 处理工具栏按钮点击
 function handleToolbarButtonClick(event: MouseEvent, button: any) {
   if (!textboxInstance.value || props.disabled) return;
@@ -250,6 +451,7 @@ defineExpose({
       emit('mode-change', currentMode.value);
     }
   },
+  reflowFillPreviousLine,
   addElement: (element: Element) => {
     addElement(element);
   },
@@ -294,6 +496,10 @@ defineExpose({
 /* 模式控制区域 - 靠右 */
 .mode-controls {
   margin-left: auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
 }
 
 /* 图标按钮样式 */
