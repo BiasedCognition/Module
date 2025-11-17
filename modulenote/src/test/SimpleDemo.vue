@@ -91,7 +91,7 @@
 import { ref, reactive, onMounted } from 'vue';
 import { useEventNode, NotesChannels } from '@/Event';
 import { Textbox } from '../components/Object/textbox';
-import { Element } from '../components/Object/element';
+import { TextElement as Element } from '../components/Object/textElement';
 import { tButton } from '../components/Object/Button';
 import TemplateTextbox from '../components/Templates/Textbox.vue';
 import TemplateButton from '../components/Templates/Button.vue';

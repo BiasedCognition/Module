@@ -45,7 +45,7 @@
           <element-component
             v-for="element in elements"
             :key="element.elementId"
-            :element="element"
+            :textElement="element"
             :mode="currentMode"
             @click="handleElementClick"
             @dblclick="handleElementDoubleClick"
@@ -65,7 +65,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, reactive, inject, nextTick } from 'vue';
 import { Textbox } from '../Object/textbox';
 import { ObjectBase } from '../Object/object';
-import { Element } from '../Object/element';
+import { TextElement as Element } from '../Object/textElement';
 import TemplateButton from './Button.vue';
 import ElementComponent from './Element.vue';
 import {
@@ -193,7 +193,7 @@ function addElement(element: Element) {
   textboxInstance.value.addElement(element);
   updateElementsList();
   emit('element-add', element);
-  eventNode.emit(NotesChannels.ELEMENT_ADD, { element });
+  eventNode.emit(NotesChannels.ELEMENT_ADD, { element, textElement: element });
 }
 
 // 移除元素
@@ -217,13 +217,13 @@ function clearElements() {
 // 处理元素点击
 function handleElementClick(element: Element) {
   emit('element-click', element);
-  eventNode.emit(NotesChannels.ELEMENT_CLICK, { element });
+  eventNode.emit(NotesChannels.ELEMENT_CLICK, { element, textElement: element });
 }
 
 // 处理元素双击
 function handleElementDoubleClick(element: Element) {
   emit('element-dblclick', element);
-  eventNode.emit(NotesChannels.ELEMENT_DOUBLE_CLICK, { element });
+  eventNode.emit(NotesChannels.ELEMENT_DOUBLE_CLICK, { element, textElement: element });
 }
 
 // 处理元素移除
@@ -244,9 +244,9 @@ function handleElementSplit(payload: ElementSplitPayload) {
   updateElementsList();
   if (newElement) {
     emit('element-add', newElement);
-    eventNode.emit(NotesChannels.ELEMENT_ADD, { element: newElement });
+    eventNode.emit(NotesChannels.ELEMENT_ADD, { element: newElement, textElement: newElement });
   }
-  eventNode.emit(NotesChannels.ELEMENT_SPLIT, payload);
+  eventNode.emit(NotesChannels.ELEMENT_SPLIT, { ...payload, textElement: payload.element });
 }
 
 // ====== 重排：从前往后尝试将下一行首元素的前缀塞回上一行 ======

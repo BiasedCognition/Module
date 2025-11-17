@@ -85,7 +85,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue';
 import { Textbox } from '../components/Object/textbox';
-import { Element } from '../components/Object/element';
+import { TextElement as Element } from '../components/Object/textElement';
 import TextboxComponent from '../components/Templates/Textbox.vue';
 import TemplateButton from '../components/Templates/Button.vue';
 import { useEventNode, NotesChannels } from '@/Event';

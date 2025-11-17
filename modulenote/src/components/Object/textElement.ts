@@ -1,6 +1,6 @@
 import { ObjectBase } from "./object";
 
-export class Element extends ObjectBase {
+export class TextElement extends ObjectBase {
   /** 在文本中的位置索引 */
   public position: number = 0;
   
@@ -24,8 +24,8 @@ export class Element extends ObjectBase {
     this.setContent(content);
     this.displayText = displayText;
     this.position = position;
-    this.type = 'element';
-    this.elementId = `element_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    this.type = 'text-element';
+    this.elementId = `textElement_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
   
   /**
@@ -187,3 +187,9 @@ export class Element extends ObjectBase {
     });
   }
 }
+
+// 兼容导出
+export { TextElement as Element };
+
+
+

@@ -1,7 +1,7 @@
 import { ObjectBase } from "./object.ts";
 import { tButton } from "./Button.ts";
 import { Textbox } from "./textbox.ts";
-import { Element } from "./element.ts";
+import { Element } from "./textElement.ts";
 
 // 创建一个ObjectBase的具体实现类
 class ConcreteObject extends ObjectBase {

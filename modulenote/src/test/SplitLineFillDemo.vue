@@ -54,7 +54,7 @@
 import { ref, onMounted, onUnmounted, reactive, watch, nextTick } from 'vue';
 import TextboxComponent from '../components/Templates/Textbox.vue';
 import TemplateButton from '../components/Templates/Button.vue';
-import { Element } from '../components/Object/element';
+import { TextElement as Element } from '../components/Object/textElement';
 import { useEventNode, NotesChannels } from '@/Event';
 
 const textboxRef = ref();

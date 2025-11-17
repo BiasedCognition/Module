@@ -35,22 +35,24 @@ import { marked } from 'marked';
 import type { ObjectBase } from '../Object/object';
 import { useEventNode, NotesChannels } from '@/Event';
 
-// Props定义
+// Props定义（兼容 element 与 textElement）
 const props = defineProps<{
-  element: any;
+  element?: any;
+  textElement?: any;
   mode: 'view' | 'edit';
 }>();
+const elementRef = computed(() => (props as any).textElement ?? (props as any).element);
 
 const isReadOnly = computed(() => props.mode === 'view');
 const displayTextValue = computed(() => {
-  const current = props.element as any;
+  const current = elementRef.value as any;
   return current && typeof current.displayText === 'string'
     ? current.displayText
     : '';
 });
 
 const textColor = computed(() => {
-  const current = props.element as any;
+  const current = elementRef.value as any;
   return current && typeof current.textColor === 'string'
     ? current.textColor
     : '#1f2937';
@@ -84,8 +86,9 @@ const editMaxWidthPx = ref(0);
 
 // 方法
 const handleClick = () => {
-  emit('click', props.element);
-  eventNode.emit(NotesChannels.ELEMENT_CLICK, { element: props.element });
+  const el = elementRef.value;
+  emit('click', el);
+  eventNode.emit(NotesChannels.ELEMENT_CLICK, { element: el, textElement: el });
 };
 
 const startEditing = () => {
@@ -141,8 +144,9 @@ const handleDoubleClick = () => {
   if (!isReadOnly.value) {
     startEditing();
   }
-  emit('dblclick', props.element);
-  eventNode.emit(NotesChannels.ELEMENT_DOUBLE_CLICK, { element: props.element });
+  const el = elementRef.value;
+  emit('dblclick', el);
+  eventNode.emit(NotesChannels.ELEMENT_DOUBLE_CLICK, { element: el, textElement: el });
 };
 
 const handleFocus = () => {
@@ -170,7 +174,7 @@ const handleKeyDown = (event: KeyboardEvent) => {
 };
 
 const syncDisplayText = (value: string) => {
-  const target: any = props.element;
+  const target: any = elementRef.value;
   if (target) {
     if (typeof target.setDisplayText === 'function') {
       target.setDisplayText(value);
@@ -181,7 +185,7 @@ const syncDisplayText = (value: string) => {
 };
 
 const setElementColor = (color: string) => {
-  const target: any = props.element;
+  const target: any = elementRef.value;
   if (!target) return;
   if (typeof target.setTextColor === 'function') {
     target.setTextColor(color);
@@ -244,12 +248,13 @@ const autoSplitAt = (splitIndex: number) => {
   setElementColor(textColor.value);
   isEditing.value = false;
   emit('split', {
-    element: props.element,
+    element: elementRef.value,
     beforeText,
     afterText,
   });
   eventNode.emit(NotesChannels.ELEMENT_SPLIT, {
-    element: props.element,
+    element: elementRef.value,
+    textElement: elementRef.value,
     beforeText,
     afterText,
   });
@@ -370,23 +375,24 @@ const performSplit = () => {
   isEditing.value = false;
 
   emit('split', {
-    element: props.element,
+    element: elementRef.value,
     beforeText,
     afterText,
   });
   eventNode.emit(NotesChannels.ELEMENT_SPLIT, {
-    element: props.element,
+    element: elementRef.value,
+    textElement: elementRef.value,
     beforeText,
     afterText,
   });
 };
 
 // 监听属性变化
-watch(() => props.element?.position, (newPos) => {
+watch(() => elementRef.value?.position, (newPos) => {
   console.log(`元素位置已更新: ${newPos}`);
 });
 
-watch(() => props.element?.value, (newVal) => {
+watch(() => elementRef.value?.value, (newVal) => {
   console.log('元素值已更新:', newVal);
 });
 
@@ -402,7 +408,7 @@ watch(
 watch(
   () => textColor.value,
   (newColor) => {
-    const target: any = props.element;
+    const target: any = elementRef.value;
     if (!target) return;
     const currentColor = typeof target.getTextColor === 'function'
       ? target.getTextColor()
@@ -413,19 +419,19 @@ watch(
 );
 
 watch(
-  () => props.element,
+  () => elementRef.value,
   () => {
     if (!registerElement) return;
     cleanupDoubleClick?.();
-    if (rootRef.value && props.element) {
-      cleanupDoubleClick = registerElement(rootRef.value, props.element as ObjectBase);
+    if (rootRef.value && elementRef.value) {
+      cleanupDoubleClick = registerElement(rootRef.value, elementRef.value as ObjectBase);
     }
   }
 );
 
 onMounted(() => {
   if (registerElement && rootRef.value) {
-    cleanupDoubleClick = registerElement(rootRef.value, props.element as ObjectBase);
+    cleanupDoubleClick = registerElement(rootRef.value, elementRef.value as ObjectBase);
   }
   editableText.value = displayTextValue.value ?? '';
   // 不在输入过程中自动拆分；移除尺寸变化时的自动拆分，仅在提交时处理

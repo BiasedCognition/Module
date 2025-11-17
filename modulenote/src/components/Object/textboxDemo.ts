@@ -1,5 +1,5 @@
 import { Textbox } from "./textbox.ts";
-import { Element } from "./element.ts";
+import { Element } from "./textElement.ts";
 
 /**
  * 演示Textbox类的新功能

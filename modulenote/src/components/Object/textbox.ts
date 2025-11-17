@@ -1,6 +1,6 @@
 import { ObjectBase } from "./object.ts";
 import { tButton } from "./Button.ts";
-import { Element } from "./element.ts";
+import { Element } from "./textElement.ts";
 
 export class Textbox extends ObjectBase {
   /** 元素集合 */
