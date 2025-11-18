@@ -61,6 +61,24 @@
             </div>
           </div>
           <div
+            v-if="supportsBackgroundColor"
+            class="info-item color-section"
+          >
+            <label>背景颜色:</label>
+            <div class="color-palette">
+              <button
+                v-for="color in backgroundColorPalette"
+                :key="color"
+                type="button"
+                class="color-swatch"
+                :style="{ backgroundColor: color }"
+                :class="{ active: backgroundColor === color }"
+                @click="updateBackgroundColor(color)"
+                :title="color"
+              ></button>
+            </div>
+          </div>
+          <div
             v-if="supportsSplittable"
             class="info-item splittable-section"
           >
@@ -115,6 +133,7 @@ const contentText = ref('');
 const expanded = ref(false);
 const displayText = ref('');
 const textColor = ref('#1f2937');
+const backgroundColor = ref('#e5e7eb');
 const splittable = ref(true);
 
 const supportsDisplayText = computed(() => {
@@ -138,6 +157,14 @@ const supportsSplittable = computed(() => {
   );
 });
 
+const supportsBackgroundColor = computed(() => {
+  const obj = selectedObject.value as any;
+  return !!(
+    obj &&
+    (typeof obj.backgroundColor === 'string' || typeof obj.getBackgroundColor === 'function')
+  );
+});
+
 const colorPalette = [
   '#1f2937',
   '#111827',
@@ -152,6 +179,33 @@ const colorPalette = [
   '#ec4899',
   '#14b8a6',
   '#f8fafc',
+];
+
+const backgroundColorPalette = [
+  'rgba(33, 150, 243, 0.08)',
+  'rgba(33, 150, 243, 0.15)',
+  'rgba(239, 68, 68, 0.08)',
+  'rgba(239, 68, 68, 0.15)',
+  'rgba(249, 115, 22, 0.08)',
+  'rgba(249, 115, 22, 0.15)',
+  'rgba(245, 158, 11, 0.08)',
+  'rgba(245, 158, 11, 0.15)',
+  'rgba(16, 185, 129, 0.08)',
+  'rgba(16, 185, 129, 0.15)',
+  'rgba(14, 165, 233, 0.08)',
+  'rgba(14, 165, 233, 0.15)',
+  'rgba(59, 130, 246, 0.08)',
+  'rgba(59, 130, 246, 0.15)',
+  'rgba(99, 102, 241, 0.08)',
+  'rgba(99, 102, 241, 0.15)',
+  'rgba(139, 92, 246, 0.08)',
+  'rgba(139, 92, 246, 0.15)',
+  'rgba(236, 72, 153, 0.08)',
+  'rgba(236, 72, 153, 0.15)',
+  'rgba(20, 184, 166, 0.08)',
+  'rgba(20, 184, 166, 0.15)',
+  'rgba(248, 250, 252, 0.8)',
+  'transparent',
 ];
 
 const emitExpandedState = (value: boolean) => {
@@ -189,6 +243,14 @@ const readObjectContent = (target: any) => {
     textColor.value = '#1f2937';
   }
 
+  if (typeof target?.getBackgroundColor === 'function') {
+    backgroundColor.value = target.getBackgroundColor() || '#e5e7eb';
+  } else if (typeof target?.backgroundColor === 'string') {
+    backgroundColor.value = target.backgroundColor || '#e5e7eb';
+  } else {
+    backgroundColor.value = '#e5e7eb';
+  }
+
   if (typeof target?.getSplittable === 'function') {
     splittable.value = target.getSplittable() ?? true;
   } else if (typeof target?.splittable === 'boolean') {
@@ -207,6 +269,7 @@ const applySelectedObject = (object: ObjectBase | null) => {
     contentText.value = '';
     displayText.value = '';
     textColor.value = '#1f2937';
+    backgroundColor.value = '#e5e7eb';
     splittable.value = true;
   }
 };
@@ -263,6 +326,17 @@ const updateTextColor = (color: string) => {
     target.setTextColor(color);
   } else {
     target.textColor = color;
+  }
+};
+
+const updateBackgroundColor = (color: string) => {
+  if (!selectedObject.value || !supportsBackgroundColor.value) return;
+  backgroundColor.value = color;
+  const target: any = selectedObject.value;
+  if (typeof target.setBackgroundColor === 'function') {
+    target.setBackgroundColor(color);
+  } else {
+    target.backgroundColor = color;
   }
 };
 

@@ -111,6 +111,7 @@ export class Textbox extends ObjectBase {
     const normalizedBefore = beforeText ?? '';
     const normalizedAfter = afterText ?? '';
     const textColor = typeof target.getTextColor === 'function' ? target.getTextColor() : target.textColor;
+    const backgroundColor = typeof target.getBackgroundColor === 'function' ? target.getBackgroundColor() : target.backgroundColor;
     const splittable = typeof target.getSplittable === 'function' ? target.getSplittable() : target.splittable ?? true;
 
     target.setDisplayText(normalizedBefore);
@@ -120,6 +121,11 @@ export class Textbox extends ObjectBase {
     } else {
       target.textColor = textColor;
     }
+    if (typeof target.setBackgroundColor === 'function') {
+      target.setBackgroundColor(backgroundColor);
+    } else {
+      target.backgroundColor = backgroundColor;
+    }
 
     const newElement = new Element();
     newElement.setDisplayText(normalizedAfter);
@@ -128,6 +134,11 @@ export class Textbox extends ObjectBase {
       newElement.setTextColor(textColor);
     } else {
       newElement.textColor = textColor;
+    }
+    if (typeof newElement.setBackgroundColor === 'function') {
+      newElement.setBackgroundColor(backgroundColor);
+    } else {
+      newElement.backgroundColor = backgroundColor;
     }
     // 继承原元素的可分割性
     if (typeof newElement.setSplittable === 'function') {

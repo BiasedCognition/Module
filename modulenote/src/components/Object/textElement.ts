@@ -10,6 +10,9 @@ export class TextElement extends ObjectBase {
   /** 文本颜色 */
   public textColor: string = '#1f2937';
 
+  /** 背景颜色，默认为深灰色 */
+  public backgroundColor: string = '#e5e7eb';
+
   /** 是否可分割，默认为 true */
   public splittable: boolean = true;
   
@@ -176,6 +179,25 @@ export class TextElement extends ObjectBase {
    */
   public getTextColor(): string {
     return this.textColor;
+  }
+
+  /**
+   * 设置背景颜色
+   * @param color 颜色值
+   */
+  public setBackgroundColor(color: string): void {
+    this.backgroundColor = color;
+    this.triggerLocalListeners('backgroundColorUpdated', this, {
+      elementId: this.elementId,
+      backgroundColor: this.backgroundColor,
+    });
+  }
+
+  /**
+   * 获取背景颜色
+   */
+  public getBackgroundColor(): string {
+    return this.backgroundColor;
   }
 
   /**

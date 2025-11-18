@@ -10,7 +10,7 @@
     <div
       v-if="!isEditing"
       class="element-display-text"
-      :style="{ color: textColor }"
+      :style="{ color: textColor, backgroundColor: backgroundColor }"
       v-html="renderedHtml"
     ></div>
     <div
@@ -24,7 +24,7 @@
       @keydown.enter.prevent="commitEdit"
       @keydown.esc.prevent="cancelEdit"
       @input="handleInput"
-      :style="{ color: textColor }"
+      :style="{ color: textColor, backgroundColor: backgroundColor }"
       v-text="editableText"
     ></div>
   </div>
@@ -57,6 +57,19 @@ const textColor = computed(() => {
   return current && typeof current.textColor === 'string'
     ? current.textColor
     : '#1f2937';
+});
+
+const backgroundColor = computed(() => {
+  const current = elementRef.value as any;
+  if (current) {
+    if (typeof current.getBackgroundColor === 'function') {
+      return current.getBackgroundColor();
+    }
+    if (typeof current.backgroundColor === 'string') {
+      return current.backgroundColor;
+    }
+  }
+  return '#e5e7eb'; // 默认深灰色背景
 });
 
 const isSplittable = computed(() => {
@@ -201,6 +214,16 @@ const setElementColor = (color: string) => {
     target.setTextColor(color);
   } else {
     target.textColor = color;
+  }
+};
+
+const setElementBackgroundColor = (color: string) => {
+  const target: any = elementRef.value;
+  if (!target) return;
+  if (typeof target.setBackgroundColor === 'function') {
+    target.setBackgroundColor(color);
+  } else {
+    target.backgroundColor = color;
   }
 };
 
@@ -445,6 +468,19 @@ watch(
 );
 
 watch(
+  () => backgroundColor.value,
+  (newColor) => {
+    const target: any = elementRef.value;
+    if (!target) return;
+    const currentColor = typeof target.getBackgroundColor === 'function'
+      ? target.getBackgroundColor()
+      : target.backgroundColor;
+    if (currentColor === newColor) return;
+    setElementBackgroundColor(newColor);
+  }
+);
+
+watch(
   () => elementRef.value,
   () => {
     if (!registerElement) return;
@@ -496,7 +532,7 @@ onUnmounted(() => {
   font-family: inherit;
   font-size: 0.9em;
   line-height: 1.4;
-  background-color: rgba(33, 150, 243, 0.08);
+  background-color: #e5e7eb;
   color: #1f2937;
   transition: background-color 0.2s ease, color 0.2s ease;
   /* 单行显示，超出触发自动分割 */
