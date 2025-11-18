@@ -111,6 +111,7 @@ export class Textbox extends ObjectBase {
     const normalizedBefore = beforeText ?? '';
     const normalizedAfter = afterText ?? '';
     const textColor = typeof target.getTextColor === 'function' ? target.getTextColor() : target.textColor;
+    const splittable = typeof target.getSplittable === 'function' ? target.getSplittable() : target.splittable ?? true;
 
     target.setDisplayText(normalizedBefore);
     target.setContent(normalizedBefore);
@@ -127,6 +128,12 @@ export class Textbox extends ObjectBase {
       newElement.setTextColor(textColor);
     } else {
       newElement.textColor = textColor;
+    }
+    // 继承原元素的可分割性
+    if (typeof newElement.setSplittable === 'function') {
+      newElement.setSplittable(splittable);
+    } else {
+      newElement.splittable = splittable;
     }
 
     this.relate(newElement);

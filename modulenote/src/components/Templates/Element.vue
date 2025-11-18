@@ -58,6 +58,15 @@ const textColor = computed(() => {
     : '#1f2937';
 });
 
+const isSplittable = computed(() => {
+  const current = elementRef.value as any;
+  if (!current) return true; // 默认可分割
+  if (typeof current.getSplittable === 'function') {
+    return current.getSplittable();
+  }
+  return current.splittable !== false; // 默认为 true，只有显式设为 false 才不可分割
+});
+
 const renderedHtml = computed(() => {
   const raw = displayTextValue.value ?? '';
   if (!raw.trim()) {
@@ -261,6 +270,11 @@ const autoSplitAt = (splitIndex: number) => {
 };
 
 const checkOverflowAndMaybeSplit = () => {
+  // 检查是否可分割
+  if (!isSplittable.value) {
+    return; // 不可分割，直接返回
+  }
+
   // 单行模式下，当内容宽度超过容器最大宽度时触发分割
   const clientW = getDisplayClientWidth();
   const scrollW = getDisplayScrollWidth();
@@ -318,6 +332,11 @@ const computeRemainingWidthInLine = (): number => {
 };
 
 const checkWrapAndSplitForCurrentLine = () => {
+  // 检查是否可分割
+  if (!isSplittable.value) {
+    return; // 不可分割，直接返回
+  }
+
   // 若整段文本宽度大于当前行剩余空间，则将前缀填满当前行后拆分
   const raw = (editableText.value || displayTextValue.value || '') as string;
   if (!raw) return;
@@ -351,6 +370,12 @@ const checkWrapAndSplitForCurrentLine = () => {
 let resizeObserver: ResizeObserver | null = null;
 
 const performSplit = () => {
+  // 检查是否可分割
+  if (!isSplittable.value) {
+    console.warn('该元素不可分割');
+    return;
+  }
+
   const editor = editorRef.value;
   if (!editor) return;
   const selection = window.getSelection();

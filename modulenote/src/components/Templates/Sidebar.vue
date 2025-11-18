@@ -60,6 +60,24 @@
               ></button>
             </div>
           </div>
+          <div
+            v-if="supportsSplittable"
+            class="info-item splittable-section"
+          >
+            <label for="splittable-toggle">可分割:</label>
+            <div class="toggle-container">
+              <input
+                id="splittable-toggle"
+                type="checkbox"
+                v-model="splittable"
+                @change="updateSplittable"
+                class="toggle-switch"
+              />
+              <label for="splittable-toggle" class="toggle-label">
+                {{ splittable ? '是' : '否' }}
+              </label>
+            </div>
+          </div>
           <div class="info-item content-section">
             <label for="content-input">内容:</label>
             <textarea
@@ -97,6 +115,7 @@ const contentText = ref('');
 const expanded = ref(false);
 const displayText = ref('');
 const textColor = ref('#1f2937');
+const splittable = ref(true);
 
 const supportsDisplayText = computed(() => {
   const obj = selectedObject.value as any;
@@ -108,6 +127,14 @@ const supportsTextColor = computed(() => {
   return !!(
     obj &&
     (typeof obj.textColor === 'string' || typeof obj.getTextColor === 'function')
+  );
+});
+
+const supportsSplittable = computed(() => {
+  const obj = selectedObject.value as any;
+  return !!(
+    obj &&
+    (typeof obj.splittable === 'boolean' || typeof obj.getSplittable === 'function')
   );
 });
 
@@ -161,6 +188,14 @@ const readObjectContent = (target: any) => {
   } else {
     textColor.value = '#1f2937';
   }
+
+  if (typeof target?.getSplittable === 'function') {
+    splittable.value = target.getSplittable() ?? true;
+  } else if (typeof target?.splittable === 'boolean') {
+    splittable.value = target.splittable;
+  } else {
+    splittable.value = true; // 默认可分割
+  }
 };
 
 const applySelectedObject = (object: ObjectBase | null) => {
@@ -172,6 +207,7 @@ const applySelectedObject = (object: ObjectBase | null) => {
     contentText.value = '';
     displayText.value = '';
     textColor.value = '#1f2937';
+    splittable.value = true;
   }
 };
 
@@ -227,6 +263,16 @@ const updateTextColor = (color: string) => {
     target.setTextColor(color);
   } else {
     target.textColor = color;
+  }
+};
+
+const updateSplittable = () => {
+  if (!selectedObject.value || !supportsSplittable.value) return;
+  const target: any = selectedObject.value;
+  if (typeof target.setSplittable === 'function') {
+    target.setSplittable(splittable.value);
+  } else {
+    target.splittable = splittable.value;
   }
 };
 </script>
@@ -413,6 +459,52 @@ const updateTextColor = (color: string) => {
 .color-swatch.active {
   border-color: #2563eb;
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.4);
+}
+
+.splittable-section .toggle-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toggle-switch {
+  width: 44px;
+  height: 24px;
+  appearance: none;
+  background-color: #cbd5e1;
+  border-radius: 12px;
+  position: relative;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  outline: none;
+}
+
+.toggle-switch:checked {
+  background-color: #3b82f6;
+}
+
+.toggle-switch::before {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: #ffffff;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch:checked::before {
+  transform: translateX(20px);
+}
+
+.toggle-label {
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+  user-select: none;
 }
 
 .no-selection {

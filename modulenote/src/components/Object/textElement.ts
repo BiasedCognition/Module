@@ -9,6 +9,9 @@ export class TextElement extends ObjectBase {
 
   /** 文本颜色 */
   public textColor: string = '#1f2937';
+
+  /** 是否可分割，默认为 true */
+  public splittable: boolean = true;
   
   /** 元素的唯一标识符 */
   public elementId: string = '';
@@ -185,6 +188,26 @@ export class TextElement extends ObjectBase {
       elementId: this.elementId,
       displayText: this.displayText,
     });
+  }
+
+  /**
+   * 设置可分割性
+   * @param splittable 是否可分割
+   */
+  public setSplittable(splittable: boolean): void {
+    this.splittable = splittable;
+    this.triggerLocalListeners('splittableUpdated', this, {
+      elementId: this.elementId,
+      splittable: this.splittable,
+    });
+  }
+
+  /**
+   * 获取可分割性
+   * @returns 是否可分割
+   */
+  public getSplittable(): boolean {
+    return this.splittable;
   }
 }
 
