@@ -2,6 +2,7 @@
   <div 
     ref="rootRef"
     class="element-component"
+    :data-element-id="elementRef?.elementId || ''"
     :style="isEditing ? { maxWidth: editMaxWidthPx + 'px', flex: '0 0 auto' } : undefined"
     @click="handleClick"
     @dblclick="handleDoubleClick"
@@ -453,6 +454,14 @@ watch(
     }
   }
 );
+
+// 监听开始编辑事件
+eventNode.on(NotesChannels.ELEMENT_START_EDIT, ({ payload }) => {
+  const { elementId } = payload as any;
+  if (elementId === elementRef.value?.elementId && !isEditing.value && !isReadOnly.value) {
+    startEditing();
+  }
+});
 
 onMounted(() => {
   if (registerElement && rootRef.value) {

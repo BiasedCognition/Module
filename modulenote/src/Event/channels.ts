@@ -16,6 +16,14 @@ export const NotesChannels = {
   
   // Textbox 相关
   TEXTBOX_MODE_CHANGE: 'notes:textbox:mode-change',
+  
+  // 元素编辑相关
+  ELEMENT_START_EDIT: 'notes:element:start-edit',
+  
+  // Textbox 激活相关
+  TEXTBOX_ACTIVATE: 'notes:textbox:activate',
+  TEXTBOX_DEACTIVATE: 'notes:textbox:deactivate',
+  TEXTBOX_ADD_ELEMENT_REQUEST: 'notes:textbox:add-element-request',
 } as const;
 
 export type NotesChannelKey = keyof typeof NotesChannels;
@@ -62,6 +70,22 @@ export interface ElementsChangePayload {
 
 export interface TextboxModeChangePayload {
   mode: 'view' | 'edit';
+}
+
+export interface ElementStartEditPayload {
+  elementId: string;
+}
+
+export interface TextboxActivatePayload {
+  textboxId: string;
+}
+
+export interface TextboxDeactivatePayload {
+  textboxId: string;
+}
+
+export interface TextboxAddElementRequestPayload {
+  textboxId: string;
 }
 
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, provide } from 'vue';
+import { ref, provide, onMounted, onUnmounted } from 'vue';
 import ObjectCommunicationDemo from './test/ObjectCommunicationDemo.vue';
 import SimpleDemo from './test/SimpleDemo.vue';
 import SplitLineFillDemo from './test/SplitLineFillDemo.vue';
@@ -13,11 +13,13 @@ import {
   type SelectionChangedPayload,
   type SidebarExpandedPayload,
   type SidebarContentUpdatedPayload,
+  type TextboxAddElementRequestPayload,
 } from './Event';
 
 // 状态管理
 const selectedObject = ref<ObjectBase | null>(null);
 const sidebarExpanded = ref(false);
+const activeTextboxId = ref<string | null>(null);
 
 const eventNode = useEventNode({ tags: ['app-root'] });
 
@@ -61,6 +63,63 @@ eventNode.on(NotesChannels.SIDEBAR_CONTENT_UPDATED, ({ payload }) => {
     contentPreview:
       typeof content === 'string' ? content.slice(0, 120) : content,
   });
+});
+
+// 全局键盘事件处理：响应快捷键添加元素
+function handleGlobalKeyDown(event: KeyboardEvent) {
+  // 如果当前有元素正在编辑，不处理快捷键（避免冲突）
+  const activeElement = document.activeElement;
+  if (activeElement && activeElement.classList.contains('element-display-text--editing')) {
+    return;
+  }
+
+  // Insert 键或 Ctrl+N：添加新元素
+  if (event.key === 'Insert' || (event.ctrlKey && event.key.toLowerCase() === 'n')) {
+    // 只在有激活的 textbox 时响应
+    if (activeTextboxId.value) {
+      event.preventDefault();
+      event.stopPropagation();
+      eventNode.emit(NotesChannels.TEXTBOX_ADD_ELEMENT_REQUEST, { textboxId: activeTextboxId.value });
+    }
+  }
+}
+
+// 全局点击事件处理：点击外部区域时取消激活
+function handleGlobalClick(event: MouseEvent) {
+  const target = event.target as HTMLElement;
+  // 检查点击是否在 textbox 内部
+  const textboxWrapper = target.closest('.textbox-wrapper');
+  if (!textboxWrapper && activeTextboxId.value) {
+    // 点击了外部区域，取消激活
+    eventNode.emit(NotesChannels.TEXTBOX_DEACTIVATE, { textboxId: activeTextboxId.value });
+    activeTextboxId.value = null;
+  }
+}
+
+// 监听 textbox 激活/取消激活事件
+eventNode.on(NotesChannels.TEXTBOX_ACTIVATE, ({ payload }) => {
+  const { textboxId } = payload as any;
+  activeTextboxId.value = textboxId;
+  logger.debug('Textbox 已激活', { textboxId });
+});
+
+eventNode.on(NotesChannels.TEXTBOX_DEACTIVATE, ({ payload }) => {
+  const { textboxId } = payload as any;
+  if (activeTextboxId.value === textboxId) {
+    activeTextboxId.value = null;
+    logger.debug('Textbox 已取消激活', { textboxId });
+  }
+});
+
+// 注册全局事件监听
+onMounted(() => {
+  document.addEventListener('keydown', handleGlobalKeyDown);
+  document.addEventListener('click', handleGlobalClick, true); // 使用捕获阶段确保先执行
+});
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleGlobalKeyDown);
+  document.removeEventListener('click', handleGlobalClick, true);
 });
 
 // 提供给子组件使用的方法

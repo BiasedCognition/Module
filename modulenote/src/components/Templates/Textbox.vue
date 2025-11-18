@@ -1,5 +1,10 @@
 <template>
-  <div class="textbox-wrapper">
+  <div 
+    ref="wrapperRef"
+    class="textbox-wrapper"
+    :class="{ 'textbox-active': isActive }"
+    @click="handleWrapperClick"
+  >
     <!-- 操作工具栏 -->
     <div class="textbox-toolbar">
       <!-- 右侧模式切换按钮 -->
@@ -109,7 +114,11 @@ const buttonStates = reactive<Record<string, boolean>>({
 const elements = ref<Element[]>([]);
 const eventNode = useEventNode({ tags: ['textbox'] });
 const containerRef = ref<HTMLElement | null>(null);
+const wrapperRef = ref<HTMLElement | null>(null);
 const autoReflowEnabled = ref(false);
+const lastAddedElementId = ref<string | null>(null);
+const textboxId = ref<string>(`textbox_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+const isActive = ref(false);
 
 // 计算属性
 const actionButtons = computed(() => {
@@ -136,8 +145,26 @@ onMounted(() => {
   // 更新元素列表
   updateElementsList();
   
-  // 注册双击事件 - 注释掉为textbox容器注册的双击事件，避免与元素的双击事件冲突
-  // 这样双击元素时只会触发元素自身的dblclick事件，侧边栏将显示元素内容而不是textbox内容
+  // 监听激活/取消激活事件
+  eventNode.on(NotesChannels.TEXTBOX_ACTIVATE, ({ payload }) => {
+    const { textboxId: id } = payload as any;
+    isActive.value = id === textboxId.value;
+  });
+  
+  eventNode.on(NotesChannels.TEXTBOX_DEACTIVATE, ({ payload }) => {
+    const { textboxId: id } = payload as any;
+    if (id === textboxId.value) {
+      isActive.value = false;
+    }
+  });
+  
+  // 监听添加元素请求
+  eventNode.on(NotesChannels.TEXTBOX_ADD_ELEMENT_REQUEST, ({ payload }) => {
+    const { textboxId: id } = payload as any;
+    if (id === textboxId.value) {
+      addNewElement();
+    }
+  });
 });
 
 // 组件卸载时清理事件监听
@@ -423,6 +450,47 @@ function toggleAutoReflow() {
   autoReflowEnabled.value = !autoReflowEnabled.value;
 }
 
+// 处理 textbox 容器点击：激活当前 textbox
+function handleWrapperClick(event: MouseEvent) {
+  // 如果点击的是工具栏按钮，不激活（按钮有自己的点击处理）
+  const target = event.target as HTMLElement;
+  if (target.closest('.textbox-toolbar .icon-button')) {
+    return;
+  }
+  
+  // 点击 textbox 内部任何区域（包括元素、空白区域）都激活
+  // 这样可以确保编辑完元素后，textbox 仍然保持激活状态
+  if (!isActive.value) {
+    isActive.value = true;
+    eventNode.emit(NotesChannels.TEXTBOX_ACTIVATE, { textboxId: textboxId.value });
+  }
+}
+
+// 创建并添加新元素
+function addNewElement() {
+  if (!textboxInstance.value || props.disabled || currentMode.value === 'view') {
+    return;
+  }
+
+  // 创建新的文本元素
+  const newElement = new Element({}, '新元素', elements.value.length);
+  
+  // 添加到 textbox
+  addElement(newElement);
+  
+  // 记录最后添加的元素 ID，用于后续自动进入编辑状态
+  lastAddedElementId.value = newElement.elementId;
+  
+  // 等待 DOM 更新后，通过事件系统触发新元素的编辑状态
+  nextTick(() => {
+    if (lastAddedElementId.value) {
+      // 通过事件系统通知对应的 Element 组件进入编辑状态
+      eventNode.emit(NotesChannels.ELEMENT_START_EDIT, { elementId: lastAddedElementId.value });
+      lastAddedElementId.value = null;
+    }
+  });
+}
+
 // 处理工具栏按钮点击
 function handleToolbarButtonClick(event: MouseEvent, button: any) {
   if (!textboxInstance.value || props.disabled) return;
@@ -475,6 +543,14 @@ defineExpose({
   overflow: hidden;
   background: #ffffff;
   box-shadow: none;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  cursor: default;
+}
+
+.textbox-wrapper.textbox-active {
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
 }
 
 /* 工具栏样式 */
