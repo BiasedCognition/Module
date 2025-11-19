@@ -184,6 +184,69 @@ export class Textbox extends ObjectBase {
   }
   
   /**
+   * 合并两个元素
+   * @param sourceElementId 源元素ID（被拖拽的元素）
+   * @param targetElementId 目标元素ID（被拖到的元素）
+   * @returns 是否成功合并
+   */
+  public mergeElements(sourceElementId: string, targetElementId: string): boolean {
+    const sourceIndex = this.elements.findIndex(el => el.elementId === sourceElementId);
+    const targetIndex = this.elements.findIndex(el => el.elementId === targetElementId);
+    
+    if (sourceIndex === -1 || targetIndex === -1) {
+      console.warn(`无法找到要合并的元素: source=${sourceElementId}, target=${targetElementId}`);
+      return false;
+    }
+    
+    if (sourceIndex === targetIndex) {
+      console.warn('源元素和目标元素相同，无法合并');
+      return false;
+    }
+    
+    const sourceElement = this.elements[sourceIndex];
+    const targetElement = this.elements[targetIndex];
+    
+    // 获取两个元素的文本
+    const sourceText = typeof sourceElement.getDisplayText === 'function' 
+      ? sourceElement.getDisplayText() 
+      : sourceElement.displayText || '';
+    const targetText = typeof targetElement.getDisplayText === 'function'
+      ? targetElement.getDisplayText()
+      : targetElement.displayText || '';
+    
+    // 合并文本（源元素在前，目标元素在后）
+    const mergedText = (sourceText + targetText).trim();
+    
+    // 更新目标元素的文本
+    if (typeof targetElement.setDisplayText === 'function') {
+      targetElement.setDisplayText(mergedText);
+    } else {
+      targetElement.displayText = mergedText;
+    }
+    
+    if (typeof targetElement.setContent === 'function') {
+      targetElement.setContent(mergedText);
+    } else {
+      targetElement.content = mergedText;
+    }
+    
+    // 移除源元素
+    this.elements.splice(sourceIndex, 1);
+    this.unrelate(sourceElement);
+    
+    console.log(`元素${sourceElementId}已合并到元素${targetElementId}，合并后文本: ${mergedText}`);
+    
+    // 触发元素合并信号
+    this.triggerLocalListeners('elementMerged', this, {
+      sourceElementId,
+      targetElementId,
+      mergedText,
+    });
+    
+    return true;
+  }
+  
+  /**
    * 获取所有元素
    * @returns 元素数组
    */

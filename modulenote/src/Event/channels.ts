@@ -24,6 +24,9 @@ export const NotesChannels = {
   TEXTBOX_ACTIVATE: 'notes:textbox:activate',
   TEXTBOX_DEACTIVATE: 'notes:textbox:deactivate',
   TEXTBOX_ADD_ELEMENT_REQUEST: 'notes:textbox:add-element-request',
+  
+  // 元素融合相关
+  ELEMENT_MERGE: 'notes:element:merge',
 } as const;
 
 export type NotesChannelKey = keyof typeof NotesChannels;
@@ -86,6 +89,11 @@ export interface TextboxDeactivatePayload {
 
 export interface TextboxAddElementRequestPayload {
   textboxId: string;
+}
+
+export interface ElementMergePayload {
+  sourceElementId: string;
+  targetElementId: string;
 }
 
 

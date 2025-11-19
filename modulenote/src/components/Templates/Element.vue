@@ -2,10 +2,14 @@
   <div 
     ref="rootRef"
     class="element-component"
+    :class="{ 'dragging': isDragging, 'drag-over': isDragOver }"
     :data-element-id="elementRef?.elementId || ''"
     :style="isEditing ? { maxWidth: editMaxWidthPx + 'px', flex: '0 0 auto' } : undefined"
     @click="handleClick"
     @dblclick="handleDoubleClick"
+    @mousedown="handleMouseDown"
+    @mouseup="handleMouseUp"
+    @mouseleave="handleMouseLeave"
   >
     <div
       v-if="!isEditing"
@@ -107,11 +111,182 @@ const originalText = ref('');
 const eventNode = useEventNode({ tags: ['element'] });
 const editMaxWidthPx = ref(0);
 
+// 拖拽融合相关状态
+const isDragging = ref(false);
+const isDragOver = ref(false);
+const dragStartElementId = ref<string | null>(null);
+const dragTargetElementId = ref<string | null>(null);
+const dragStartPosition = ref<{ x: number; y: number } | null>(null);
+const DRAG_THRESHOLD = 5; // 拖拽阈值，超过这个距离才认为是拖拽
+
 // 方法
 const handleClick = () => {
+  // 如果正在拖拽，不触发点击事件
+  if (isDragging.value) {
+    return;
+  }
   const el = elementRef.value;
   emit('click', el);
   eventNode.emit(NotesChannels.ELEMENT_CLICK, { element: el, textElement: el });
+};
+
+// 拖拽开始
+const handleMouseDown = (e: MouseEvent) => {
+  // 如果正在编辑，不允许拖拽
+  if (isEditing.value || isReadOnly.value) return;
+  
+  const elementId = elementRef.value?.elementId;
+  if (!elementId) return;
+  
+  dragStartElementId.value = elementId;
+  dragStartPosition.value = { x: e.clientX, y: e.clientY };
+  isDragging.value = false; // 初始状态为 false，只有移动超过阈值才设为 true
+  
+  // 添加全局监听器
+  document.addEventListener('mousemove', handleGlobalMouseMove);
+  document.addEventListener('mouseup', handleGlobalMouseUp);
+  
+  e.preventDefault();
+};
+
+// 全局鼠标移动处理
+const handleGlobalMouseMove = (e: MouseEvent) => {
+  if (!dragStartPosition.value || !dragStartElementId.value) return;
+  
+  const dx = Math.abs(e.clientX - dragStartPosition.value.x);
+  const dy = Math.abs(e.clientY - dragStartPosition.value.y);
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  
+  // 超过阈值才开始拖拽
+  if (distance > DRAG_THRESHOLD && !isDragging.value) {
+    isDragging.value = true;
+  }
+  
+  if (!isDragging.value) return;
+  
+  // 检测当前鼠标位置下的元素
+  const elementUnderMouse = document.elementFromPoint(e.clientX, e.clientY);
+  if (!elementUnderMouse) {
+    dragTargetElementId.value = null;
+    updateDragOverState();
+    return;
+  }
+  
+  // 查找最近的 element-component
+  const targetElementComponent = elementUnderMouse.closest('.element-component[data-element-id]') as HTMLElement | null;
+  if (targetElementComponent) {
+    const targetId = targetElementComponent.getAttribute('data-element-id');
+    if (targetId && targetId !== dragStartElementId.value) {
+      dragTargetElementId.value = targetId;
+    } else {
+      dragTargetElementId.value = null;
+    }
+  } else {
+    dragTargetElementId.value = null;
+  }
+  
+  updateDragOverState();
+};
+
+// 更新拖拽悬停状态
+const updateDragOverState = () => {
+  const currentElementId = elementRef.value?.elementId;
+  if (currentElementId === dragTargetElementId.value && currentElementId !== dragStartElementId.value) {
+    // 检查格式是否相同
+    if (canMergeWith(dragStartElementId.value, currentElementId)) {
+      isDragOver.value = true;
+    } else {
+      isDragOver.value = false;
+    }
+  } else {
+    isDragOver.value = false;
+  }
+};
+
+// 检查两个元素是否可以合并（格式相同）
+const canMergeWith = (sourceId: string | null, targetId: string | null): boolean => {
+  if (!sourceId || !targetId) return false;
+  
+  // 查找源元素和目标元素的 DOM 节点
+  const sourceElement = document.querySelector(`[data-element-id="${sourceId}"]`);
+  const targetElement = document.querySelector(`[data-element-id="${targetId}"]`);
+  
+  if (!sourceElement || !targetElement) return false;
+  
+  // 尝试从 DOM 元素获取 Vue 组件实例，然后获取元素对象
+  // 通过查找最近的 textbox 容器来获取元素列表
+  const sourceTextbox = sourceElement.closest('.textbox-content, .elements-container');
+  const targetTextbox = targetElement.closest('.textbox-content, .elements-container');
+  
+  // 如果两个元素不在同一个 textbox 中，不能合并
+  if (sourceTextbox !== targetTextbox) return false;
+  
+  // 通过查找所有 element-component 来获取对应的元素对象
+  // 由于我们无法直接访问 textbox 实例，我们通过比较计算后的样式来判断
+  // 但更好的方法是直接比较元素对象的属性
+  
+  // 获取当前元素（目标元素）的属性
+  const currentElement = elementRef.value as any;
+  if (!currentElement) return false;
+  
+  // 获取源元素的属性（通过查找对应的 Vue 组件）
+  // 由于无法直接访问，我们通过 DOM 查询来获取样式进行比较
+  // 但为了更准确，我们可以通过事件系统查询，或者直接比较 DOM 样式
+  
+  // 获取样式进行比较（这是临时方案，理想情况下应该比较对象属性）
+  const sourceStyle = window.getComputedStyle(sourceElement.querySelector('.element-display-text') as HTMLElement);
+  const targetStyle = window.getComputedStyle(targetElement.querySelector('.element-display-text') as HTMLElement);
+  
+  const sourceBgColor = sourceStyle.backgroundColor;
+  const sourceTextColor = sourceStyle.color;
+  const targetBgColor = targetStyle.backgroundColor;
+  const targetTextColor = targetStyle.color;
+  
+  // 比较背景颜色和文字颜色（需要规范化颜色值以确保比较准确）
+  const normalizeColor = (color: string): string => {
+    // 创建一个临时元素来规范化颜色值
+    const tempEl = document.createElement('div');
+    tempEl.style.color = color;
+    document.body.appendChild(tempEl);
+    const normalized = window.getComputedStyle(tempEl).color;
+    document.body.removeChild(tempEl);
+    return normalized.toLowerCase();
+  };
+  
+  return normalizeColor(sourceBgColor) === normalizeColor(targetBgColor) && 
+         normalizeColor(sourceTextColor) === normalizeColor(targetTextColor);
+};
+
+// 全局鼠标释放处理
+const handleGlobalMouseUp = (e: MouseEvent) => {
+  // 移除全局监听器
+  document.removeEventListener('mousemove', handleGlobalMouseMove);
+  document.removeEventListener('mouseup', handleGlobalMouseUp);
+  
+  // 如果正在拖拽且找到了目标元素，且格式相同，则触发合并
+  if (isDragging.value && dragStartElementId.value && dragTargetElementId.value) {
+    if (canMergeWith(dragStartElementId.value, dragTargetElementId.value)) {
+      // 触发合并事件
+      eventNode.emit(NotesChannels.ELEMENT_MERGE, {
+        sourceElementId: dragStartElementId.value,
+        targetElementId: dragTargetElementId.value,
+      });
+    }
+  }
+  
+  // 重置状态
+  isDragging.value = false;
+  isDragOver.value = false;
+  dragStartElementId.value = null;
+  dragTargetElementId.value = null;
+  dragStartPosition.value = null;
+};
+
+// 鼠标离开元素
+const handleMouseLeave = () => {
+  // 如果不在拖拽状态，不处理
+  if (!isDragging.value) return;
+  // 拖拽状态下，鼠标离开不影响拖拽状态
 };
 
 const startEditing = () => {
@@ -512,6 +687,10 @@ onUnmounted(() => {
   cleanupDoubleClick = null;
   resizeObserver?.disconnect();
   resizeObserver = null;
+  
+  // 清理拖拽监听器
+  document.removeEventListener('mousemove', handleGlobalMouseMove);
+  document.removeEventListener('mouseup', handleGlobalMouseUp);
 });
 </script>
 
@@ -563,6 +742,38 @@ onUnmounted(() => {
 .element-display-text:hover {
   background-color: rgba(33, 150, 243, 0.15);
   color: #0f172a;
+}
+
+/* 拖拽状态样式 */
+.element-component.dragging {
+  opacity: 0.6;
+  cursor: grabbing;
+}
+
+.element-component.drag-over {
+  position: relative;
+}
+
+.element-component.drag-over::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border: 2px dashed #3b82f6;
+  border-radius: 4px;
+  pointer-events: none;
+  animation: dragOverPulse 1s ease-in-out infinite;
+}
+
+@keyframes dragOverPulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 /* 双击时的视觉反馈 */

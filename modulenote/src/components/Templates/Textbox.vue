@@ -165,6 +165,24 @@ onMounted(() => {
       addNewElement();
     }
   });
+  
+  // 监听元素合并事件
+  eventNode.on(NotesChannels.ELEMENT_MERGE, ({ payload }) => {
+    const { sourceElementId, targetElementId } = payload as any;
+    if (!textboxInstance.value) return;
+    
+    // 检查两个元素是否都在当前 textbox 中
+    const sourceExists = textboxInstance.value.getElements().some(el => el.elementId === sourceElementId);
+    const targetExists = textboxInstance.value.getElements().some(el => el.elementId === targetElementId);
+    
+    if (sourceExists && targetExists) {
+      const success = textboxInstance.value.mergeElements(sourceElementId, targetElementId);
+      if (success) {
+        updateElementsList();
+        eventNode.emit(NotesChannels.ELEMENTS_CHANGE, { elements: elements.value });
+      }
+    }
+  });
 });
 
 // 组件卸载时清理事件监听
