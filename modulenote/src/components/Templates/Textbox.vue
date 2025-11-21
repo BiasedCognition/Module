@@ -40,6 +40,16 @@
         >
           <span class="button-icon" :title="autoReflowEnabled ? '关闭自动刷新' : '开启自动刷新'">⚙</span>
         </template-button>
+
+        <!-- 添加 VarElement -->
+        <template-button
+          :label="''"
+          type="add-var"
+          class="icon-button"
+          @click="handleAddVarElement"
+        >
+          <span class="button-icon" title="添加变量元素">𝑉</span>
+        </template-button>
       </div>
     </div>
     
@@ -47,32 +57,44 @@
     <div class="textbox-content">
       <div class="elements-container" ref="containerRef">
         <template v-if="elements.length > 0">
-          <element-component
-            v-for="element in elements"
-            :key="element.elementId"
-            :textElement="element"
-            :mode="currentMode"
-            @click="handleElementClick"
-            @dblclick="handleElementDoubleClick"
-            @remove="handleElementRemove"
-            @split="handleElementSplit"
-          ></element-component>
+          <template v-for="element in elements" :key="element.elementId">
+            <!-- 根据元素类型渲染不同的组件 -->
+            <element-component
+              v-if="element.type === 'text-element'"
+              :textElement="element"
+              :mode="currentMode"
+              @click="handleElementClick"
+              @dblclick="handleElementDoubleClick"
+              @remove="handleElementRemove"
+              @split="handleElementSplit"
+            ></element-component>
+            <var-element-component
+              v-else-if="element.type === 'var-element'"
+              :varElement="element as VarElement"
+              :mode="currentMode"
+              @click="handleElementClick"
+              @dblclick="handleElementDoubleClick"
+            ></var-element-component>
+          </template>
         </template>
         <div v-else class="empty-state">
           {{ placeholder }}
         </div>
       </div>
     </div>
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, reactive, inject, nextTick } from 'vue';
-import { Textbox } from '../Object/textbox';
+import { Textbox, type TextboxElement } from '../Object/textbox';
 import { ObjectBase } from '../Object/object';
 import { TextElement as Element } from '../Object/textElement';
+import { VarElement } from '../Object/varElement';
 import TemplateButton from './Button.vue';
 import ElementComponent from './Element.vue';
+import VarElementComponent from './VarElement.vue';
 import {
   useEventNode,
   NotesChannels,
@@ -98,11 +120,11 @@ let cleanupDoubleClick: (() => void) | null = null;
 // Emits 定义
 const emit = defineEmits<{
   (e: 'mode-change', mode: 'view' | 'edit'): void;
-  (e: 'element-add', element: Element): void;
+  (e: 'element-add', element: TextboxElement): void;
   (e: 'element-remove', elementId: string): void;
-  (e: 'element-click', element: Element): void;
-  (e: 'element-dblclick', element: Element): void;
-  (e: 'elements-change', elements: Element[]): void;
+  (e: 'element-click', element: TextboxElement): void;
+  (e: 'element-dblclick', element: TextboxElement): void;
+  (e: 'elements-change', elements: TextboxElement[]): void;
 }>();
 
 // 内部状态
@@ -111,7 +133,7 @@ const currentMode = ref<'view' | 'edit'>(props.mode);
 const buttonStates = reactive<Record<string, boolean>>({
   mode: false
 });
-const elements = ref<Element[]>([]);
+const elements = ref<TextboxElement[]>([]);
 const eventNode = useEventNode({ tags: ['textbox'] });
 const containerRef = ref<HTMLElement | null>(null);
 const wrapperRef = ref<HTMLElement | null>(null);
@@ -206,8 +228,11 @@ function updateButtonStates() {
 // 更新元素列表
 function updateElementsList() {
   if (!textboxInstance.value) return;
+  // @ts-ignore - TypeScript 无法正确推断联合类型
   elements.value = textboxInstance.value.getElements();
+  // @ts-ignore
   emit('elements-change', elements.value);
+  // @ts-ignore
   eventNode.emit(NotesChannels.ELEMENTS_CHANGE, { elements: elements.value });
   if (autoReflowEnabled.value) {
     // 在 DOM 更新后尝试重排，最多数次以避免死循环
@@ -232,7 +257,7 @@ watch(
 );
 
 // 添加元素
-function addElement(element: Element) {
+function addElement(element: TextboxElement) {
   if (!textboxInstance.value || props.disabled) return;
   
   textboxInstance.value.addElement(element);
@@ -260,13 +285,13 @@ function clearElements() {
 }
 
 // 处理元素点击
-function handleElementClick(element: Element) {
+function handleElementClick(element: TextboxElement) {
   emit('element-click', element);
   eventNode.emit(NotesChannels.ELEMENT_CLICK, { element, textElement: element });
 }
 
 // 处理元素双击
-function handleElementDoubleClick(element: Element) {
+function handleElementDoubleClick(element: TextboxElement) {
   emit('element-dblclick', element);
   eventNode.emit(NotesChannels.ELEMENT_DOUBLE_CLICK, { element, textElement: element });
 }
@@ -277,7 +302,7 @@ function handleElementRemove(elementId: string) {
 }
 
 interface ElementSplitPayload {
-  element: Element;
+  element: TextboxElement;
   beforeText: string;
   afterText: string;
 }
@@ -351,13 +376,13 @@ function measureLikeDisplay(text: string, sampleDisplay?: HTMLElement | null): n
   return w;
 }
 
-function getElementText(el: Element): string {
+function getElementText(el: TextboxElement): string {
   // 尝试从对象读取 displayText
   // @ts-ignore
   return (typeof el.getDisplayText === 'function' ? el.getDisplayText() : (el as any).displayText) ?? '';
 }
 
-function setElementText(el: Element, text: string) {
+function setElementText(el: TextboxElement, text: string) {
   if (typeof (el as any).setDisplayText === 'function') {
     (el as any).setDisplayText(text);
   } else {
@@ -367,7 +392,11 @@ function setElementText(el: Element, text: string) {
   }
 }
 
-function cloneForPrefixFrom(el: Element, prefix: string): Element {
+function cloneForPrefixFrom(el: TextboxElement, prefix: string): Element {
+  // 只支持 TextElement 的克隆
+  if (el.type === 'var-element') {
+    throw new Error('varElement 不可分割');
+  }
   const textColor = typeof (el as any).getTextColor === 'function' ? (el as any).getTextColor() : (el as any).textColor;
   const newEl = new Element();
   setElementText(newEl, prefix);
@@ -409,6 +438,10 @@ function reflowFillPreviousLine() {
     if (!elementObj) continue;
     const sampleDisplay = firstNode.querySelector('.element-display-text') as HTMLElement | null;
 
+    // 跳过 varElement（不可分割）
+    if (elementObj.type === 'var-element') continue;
+    
+    // @ts-ignore - 已检查类型，确保是 TextElement
     const raw = getElementText(elementObj) ?? '';
     if (!raw) continue;
     // 二分查找最大可放入的前缀
@@ -426,10 +459,10 @@ function reflowFillPreviousLine() {
     const after = raw.slice(ans);
 
     // 在数据层插入一个新元素到 firstIndex 之前
-    const newEl = cloneForPrefixFrom(elementObj, before);
+    const newEl = cloneForPrefixFrom(elementObj as Element, before);
     instance.elements.splice(firstIndex, 0, newEl);
     // 当前元素文本改为剩余部分
-    setElementText(elementObj, after);
+    setElementText(elementObj as Element, after);
 
     changed = true;
     // 更新视图与事件
@@ -509,6 +542,19 @@ function addNewElement() {
   });
 }
 
+// 创建并添加新的 VarElement（内容对象为空）
+function handleAddVarElement() {
+  if (!textboxInstance.value || props.disabled || currentMode.value === 'view') {
+    return;
+  }
+
+  const varNameIndex = elements.value.filter(el => el.type === 'var-element').length + 1;
+  
+  // 创建空的 VarElement，targetObject 为 null
+  const newVarElement = new VarElement(null, `变量${varNameIndex}`, elements.value.length);
+  addElement(newVarElement);
+}
+
 // 处理工具栏按钮点击
 function handleToolbarButtonClick(event: MouseEvent, button: any) {
   if (!textboxInstance.value || props.disabled) return;
@@ -547,8 +593,8 @@ defineExpose({
   clearElements: () => {
     clearElements();
   },
-  getElements: (): Element[] => {
-    return elements.value;
+  getElements: (): TextboxElement[] => {
+    return elements.value as TextboxElement[];
   },
   getMode: (): 'view' | 'edit' => currentMode.value
 });
@@ -712,5 +758,148 @@ defineExpose({
 .elements-container:hover .empty-state {
   background-color: rgba(59, 130, 246, 0.08);
   color: #64748b;
+}
+
+/* VarElement 创建对话框样式 */
+.var-element-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.var-element-dialog {
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  width: 90%;
+  max-width: 500px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dialog-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  color: #333;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #666;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+}
+
+.close-btn:hover {
+  background-color: #f0f0f0;
+}
+
+.dialog-body {
+  padding: 20px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.form-item {
+  margin-bottom: 16px;
+}
+
+.form-item label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.form-input,
+.form-select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.2s ease;
+  box-sizing: border-box;
+}
+
+.form-input:focus,
+.form-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.dialog-footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.btn-cancel,
+.btn-confirm {
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  border: 1px solid;
+}
+
+.btn-cancel {
+  background-color: #f5f5f5;
+  border-color: #d0d0d0;
+  color: #333;
+}
+
+.btn-cancel:hover {
+  background-color: #e8e8e8;
+}
+
+.btn-confirm {
+  background-color: #3b82f6;
+  border-color: #3b82f6;
+  color: #fff;
+}
+
+.btn-confirm:hover {
+  background-color: #2563eb;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .var-element-dialog {
+    width: 95%;
+    max-height: 85vh;
+  }
 }
 </style>

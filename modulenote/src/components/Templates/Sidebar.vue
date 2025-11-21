@@ -96,6 +96,89 @@
               </label>
             </div>
           </div>
+          <div
+            v-if="isVarElement"
+            class="info-item var-element-section"
+          >
+            <label>对象类型:</label>
+            <div class="object-type-display">{{ varElementObjectType }}</div>
+            <div class="object-elements-section">
+              <label>对象元素列表:</label>
+              <div class="elements-list">
+                <div
+                  v-for="(element, index) in varElementObjectElements"
+                  :key="index"
+                  class="element-item"
+                >
+                  <div class="element-display-blocks">
+                    <span class="element-type-block">{{ getElementType(element) }}</span>
+                    <span class="element-name-block">{{ getElementName(element) }}</span>
+                    <input
+                      :value="getElementValue(element)"
+                      @input="updateElementValue(element, ($event.target as HTMLInputElement).value)"
+                      @blur="onElementValueBlur(element, ($event.target as HTMLInputElement).value)"
+                      class="element-value-input"
+                      type="text"
+                      placeholder="值"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    class="remove-element-btn"
+                    @click="removeElementFromVarElement(element)"
+                    title="移除元素"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div v-if="varElementObjectElements.length === 0" class="no-elements">
+                  暂无元素
+                </div>
+              </div>
+              <div class="add-element-controls">
+                <div class="add-element-form">
+                  <div class="form-row">
+                    <label>类型:</label>
+                    <input
+                      v-model="elementForm.elementType"
+                      type="text"
+                      class="form-input-small"
+                      placeholder="输入类型..."
+                      @keydown.enter="confirmAddElement"
+                    />
+                  </div>
+                  <div class="form-row">
+                    <label>名称:</label>
+                    <input
+                      v-model="elementForm.elementName"
+                      type="text"
+                      class="form-input-small"
+                      placeholder="元素名称..."
+                      @keydown.enter="confirmAddElement"
+                    />
+                  </div>
+                  <div class="form-row">
+                    <label>值:</label>
+                    <input
+                      v-model="elementForm.elementValue"
+                      type="text"
+                      class="form-input-small"
+                      placeholder="输入值..."
+                      @keydown.enter="confirmAddElement"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    class="add-element-confirm-btn"
+                    @click="confirmAddElement"
+                    :disabled="!canAddElement"
+                  >
+                    添加
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
           <div class="info-item content-section">
             <label for="content-input">内容:</label>
             <textarea
@@ -112,12 +195,16 @@
         </div>
       </div>
     </div>
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { ObjectBase } from '../Object/object';
+import { VarElement } from '../Object/varElement';
+import { TextElement } from '../Object/textElement';
+import { Textbox } from '../Object/textbox';
 import {
   useEventNode,
   NotesChannels,
@@ -135,6 +222,23 @@ const displayText = ref('');
 const textColor = ref('#1f2937');
 const backgroundColor = ref('#e5e7eb');
 const splittable = ref(true);
+
+// varElement 相关
+const varElementObjectType = ref('');
+const varElementObjectElements = ref<ObjectBase[]>([]);
+
+// 添加元素表单相关
+const elementForm = ref({
+  elementType: '',
+  elementName: '',
+  elementValue: '',
+});
+
+// 检查是否可以添加元素（三个字段都填好）
+const canAddElement = computed(() => {
+  const { elementType, elementName, elementValue } = elementForm.value;
+  return elementType.trim().length > 0 && elementName.trim().length > 0 && elementValue.trim().length > 0;
+});
 
 const supportsDisplayText = computed(() => {
   const obj = selectedObject.value as any;
@@ -163,6 +267,11 @@ const supportsBackgroundColor = computed(() => {
     obj &&
     (typeof obj.backgroundColor === 'string' || typeof obj.getBackgroundColor === 'function')
   );
+});
+
+const isVarElement = computed(() => {
+  const obj = selectedObject.value as any;
+  return obj && (obj.type === 'var-element' || obj instanceof VarElement);
 });
 
 const colorPalette = [
@@ -258,6 +367,19 @@ const readObjectContent = (target: any) => {
   } else {
     splittable.value = true; // 默认可分割
   }
+
+  // 如果是 varElement，读取对象信息
+  if (target && (target.type === 'var-element' || target instanceof VarElement)) {
+    const varEl = target as VarElement;
+    if (typeof varEl.updateObjectElements === 'function') {
+      varEl.updateObjectElements();
+    }
+    varElementObjectType.value = varEl.objectType || 'NULL';
+    varElementObjectElements.value = varEl.objectElements || [];
+  } else {
+    varElementObjectType.value = '';
+    varElementObjectElements.value = [];
+  }
 };
 
 const applySelectedObject = (object: ObjectBase | null) => {
@@ -347,6 +469,165 @@ const updateSplittable = () => {
     target.setSplittable(splittable.value);
   } else {
     target.splittable = splittable.value;
+  }
+};
+
+// varElement 相关方法
+const getElementType = (element: ObjectBase): string => {
+  const el = element as any;
+  // 优先使用 type 属性
+  if (el.type) {
+    return el.type;
+  }
+  return '未知类型';
+};
+
+const getElementName = (element: ObjectBase): string => {
+  const el = element as any;
+  // 优先使用 name 属性
+  if (el.name) {
+    return el.name;
+  }
+  // 其次使用 displayText
+  if (el.displayText) {
+    return el.displayText;
+  }
+  // 最后使用 elementId
+  if (el.elementId) {
+    return el.elementId.substring(0, 8);
+  }
+  return '未命名';
+};
+
+const getElementValue = (element: ObjectBase): string => {
+  const el = element as any;
+  // 优先使用 value 属性
+  if (el.value !== undefined && el.value !== null) {
+    return String(el.value);
+  }
+  // 其次使用 content
+  if (el.content !== undefined && el.content !== null) {
+    return String(el.content);
+  }
+  // 对于 textElement，使用 displayText 作为值
+  if (el.type === 'text-element' && el.displayText) {
+    return el.displayText;
+  }
+  return '';
+};
+
+// 确认添加元素
+const confirmAddElement = () => {
+  if (!selectedObject.value || !isVarElement.value) return;
+  
+  const varEl = selectedObject.value as VarElement;
+  const { elementType, elementName, elementValue } = elementForm.value;
+  
+  // 验证必填字段
+  if (!elementType.trim() || !elementName.trim() || !elementValue.trim()) {
+    return;
+  }
+  
+  // 如果 VarElement 没有目标对象，先创建一个 Textbox 作为容器
+  if (!varEl.targetObject) {
+    const newTextbox = new Textbox();
+    newTextbox.type = 'var-object';
+    varEl.targetObject = newTextbox;
+    varEl.setContent(newTextbox);
+  }
+  
+  // 创建一个 Textbox 来存储元素信息
+  const newElement = new Textbox();
+  newElement.type = elementType.trim();
+  newElement.setContent(elementValue.trim());
+  (newElement as any).name = elementName.trim();
+  (newElement as any).value = elementValue.trim();
+  (newElement as any).displayText = elementValue.trim();
+  
+  if (typeof varEl.addElementToObject === 'function') {
+    varEl.addElementToObject(newElement);
+    // 更新显示
+    if (typeof varEl.updateObjectElements === 'function') {
+      varEl.updateObjectElements();
+    }
+    varElementObjectType.value = varEl.objectType || 'NULL';
+    varElementObjectElements.value = varEl.objectElements || [];
+    
+    // 清空表单
+    elementForm.value = {
+      elementType: '',
+      elementName: '',
+      elementValue: '',
+    };
+  }
+};
+
+const removeElementFromVarElement = (element: ObjectBase) => {
+  if (!selectedObject.value || !isVarElement.value) return;
+  
+  const varEl = selectedObject.value as VarElement;
+  
+  // 尝试多种方式获取 elementId
+  const elementId = (element as any).elementId || (element as any).id || (element as any).name;
+  
+  // 如果还是没有 elementId，尝试通过索引移除
+  if (!elementId) {
+    const index = varElementObjectElements.value.findIndex(el => el === element);
+    if (index !== -1 && varEl.targetObject && (varEl.targetObject as any).elements) {
+      (varEl.targetObject as any).elements.splice(index, 1);
+      varEl.updateObjectElements();
+      varElementObjectType.value = varEl.objectType || 'NULL';
+      varElementObjectElements.value = varEl.objectElements || [];
+      return;
+    }
+  }
+  
+  if (elementId && typeof varEl.removeElementFromObject === 'function') {
+    varEl.removeElementFromObject(elementId);
+    // 更新显示
+    if (typeof varEl.updateObjectElements === 'function') {
+      varEl.updateObjectElements();
+    }
+    varElementObjectType.value = varEl.objectType || 'NULL';
+    varElementObjectElements.value = varEl.objectElements || [];
+  }
+};
+
+// 更新元素的值
+const updateElementValue = (element: ObjectBase, newValue: string) => {
+  const el = element as any;
+  
+  // 更新元素的 value 属性
+  if (el.value !== undefined) {
+    el.value = newValue;
+  }
+  
+  // 更新 content
+  if (el.setContent && typeof el.setContent === 'function') {
+    el.setContent(newValue);
+  } else {
+    el.content = newValue;
+  }
+  
+  // 更新 displayText（如果存在）
+  if (el.setDisplayText && typeof el.setDisplayText === 'function') {
+    el.setDisplayText(newValue);
+  } else if (el.displayText !== undefined) {
+    el.displayText = newValue;
+  }
+};
+
+// 当输入框失去焦点时，确保值已保存
+const onElementValueBlur = (element: ObjectBase, newValue: string) => {
+  updateElementValue(element, newValue);
+  
+  // 如果 VarElement 存在，更新其对象元素列表
+  if (selectedObject.value && isVarElement.value) {
+    const varEl = selectedObject.value as VarElement;
+    if (typeof varEl.updateObjectElements === 'function') {
+      varEl.updateObjectElements();
+    }
+    varElementObjectElements.value = varEl.objectElements || [];
   }
 };
 </script>
@@ -586,6 +867,199 @@ const updateSplittable = () => {
   color: #999;
   padding: 40px 20px;
   font-style: italic;
+}
+
+/* 添加元素表单样式 */
+.add-element-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-row label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #666;
+  min-width: 40px;
+}
+
+.form-input-small,
+.form-select-small {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  transition: border-color 0.2s ease;
+  box-sizing: border-box;
+}
+
+.form-input-small:focus,
+.form-select-small:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.add-element-confirm-btn {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid rgba(59, 130, 246, 0.6);
+  background-color: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  margin-top: 4px;
+}
+
+.add-element-confirm-btn:hover:not(:disabled) {
+  background-color: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.8);
+  color: #2563eb;
+}
+
+.add-element-confirm-btn:active:not(:disabled) {
+  background-color: rgba(59, 130, 246, 0.3);
+  border-color: rgba(59, 130, 246, 0.9);
+  color: #1d4ed8;
+}
+
+.add-element-confirm-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 元素列表样式 */
+.elements-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.element-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+  font-size: 13px;
+  gap: 8px;
+}
+
+.element-display-blocks {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.element-type-block,
+.element-name-block,
+.element-value-block {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.element-type-block {
+  background-color: rgba(99, 102, 241, 0.15);
+  color: #6366f1;
+}
+
+.element-name-block {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.element-value-block {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+
+.element-value-input {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  outline: none;
+  min-width: 60px;
+  flex: 1;
+  max-width: 150px;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+  font-family: inherit;
+}
+
+.element-value-input:focus {
+  border-color: #3b82f6;
+  background-color: rgba(59, 130, 246, 0.25);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.element-value-input::placeholder {
+  color: rgba(59, 130, 246, 0.5);
+}
+
+.remove-element-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 4px;
+  background-color: #ef4444;
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: bold;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+  flex-shrink: 0;
+}
+
+.remove-element-btn:hover {
+  background-color: #dc2626;
+  transform: scale(1.1);
+}
+
+.remove-element-btn:active {
+  background-color: #b91c1c;
+  transform: scale(0.95);
+}
+
+.no-elements {
+  text-align: center;
+  color: #999;
+  padding: 20px;
+  font-style: italic;
+  font-size: 13px;
 }
 
 /* 响应式设计 */

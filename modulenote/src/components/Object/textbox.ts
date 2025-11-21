@@ -1,10 +1,14 @@
 import { ObjectBase } from "./object.ts";
 import { tButton } from "./Button.ts";
 import { Element } from "./textElement.ts";
+import { VarElement } from "./varElement.ts";
+
+// 元素类型联合
+export type TextboxElement = Element | VarElement;
 
 export class Textbox extends ObjectBase {
   /** 元素集合 */
-  public elements: Element[] = [];
+  public elements: TextboxElement[] = [];
   
   /** 编辑模式: 'view' 或 'edit' */
   public mode: 'view' | 'edit' = 'view';
@@ -82,7 +86,7 @@ export class Textbox extends ObjectBase {
    * 添加元素到textbox
    * @param element 要添加的元素
    */
-  public addElement(element: Element): void {
+  public addElement(element: TextboxElement): void {
     // 添加到元素集合
     this.elements.push(element);
     
@@ -104,7 +108,12 @@ export class Textbox extends ObjectBase {
    * @param afterText 后半部分展示文本
    * @returns 新创建的元素
    */
-  public splitElement(target: Element, beforeText: string, afterText: string): Element | null {
+  public splitElement(target: TextboxElement, beforeText: string, afterText: string): Element | null {
+    // varElement 不可分割
+    if (target instanceof VarElement || (target as any).type === 'var-element') {
+      console.warn('varElement 不可分割');
+      return null;
+    }
     const index = this.elements.findIndex(el => el === target);
     if (index === -1) return null;
 
@@ -205,6 +214,16 @@ export class Textbox extends ObjectBase {
     
     const sourceElement = this.elements[sourceIndex];
     const targetElement = this.elements[targetIndex];
+
+    if (
+      (sourceElement instanceof VarElement) ||
+      (targetElement instanceof VarElement) ||
+      (sourceElement as any)?.type === 'var-element' ||
+      (targetElement as any)?.type === 'var-element'
+    ) {
+      console.warn('varElement 不支持合并');
+      return false;
+    }
     
     // 获取两个元素的文本
     const sourceText = typeof sourceElement.getDisplayText === 'function' 
@@ -250,7 +269,7 @@ export class Textbox extends ObjectBase {
    * 获取所有元素
    * @returns 元素数组
    */
-  public getElements(): Element[] {
+  public getElements(): TextboxElement[] {
     return [...this.elements];
   }
   
