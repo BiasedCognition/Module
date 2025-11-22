@@ -4,6 +4,8 @@ import ObjectCommunicationDemo from './test/ObjectCommunicationDemo.vue';
 import SimpleDemo from './test/SimpleDemo.vue';
 import SplitLineFillDemo from './test/SplitLineFillDemo.vue';
 import Sidebar from './components/Templates/Sidebar.vue';
+import D3Example from './components/D3Example.vue';
+import CanvasManager from './components/Canvas/CanvasManager.vue';
 import { ObjectBase } from './components/Object/object';
 import { logger } from './services/logger';
 import {
@@ -157,6 +159,15 @@ provide('registerElement', (element: HTMLElement, object: ObjectBase) => {
       <div class="mt-10">
         <h2 class="text-2xl font-semibold mb-4">单行填充并在回车提交后拆分 Demo</h2>
         <SplitLineFillDemo />
+      </div>
+
+      <div class="mt-10">
+        <h2 class="text-2xl font-semibold mb-4">D3.js 数据可视化示例</h2>
+        <D3Example />
+      </div>
+
+      <div class="mt-10">
+        <CanvasManager />
       </div>
     </div>
     
