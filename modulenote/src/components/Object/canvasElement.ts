@@ -36,6 +36,9 @@ export class CanvasElement extends ObjectBase {
   /** 画布内容（可以存储 SVG 元素、图形等） */
   public canvasContent: any = null;
   
+  /** 编辑模式：'view' 查看模式，'edit' 编辑模式 */
+  public editMode: 'view' | 'edit' = 'view';
+  
   /**
    * 构造函数
    * @param width 画布宽度
@@ -51,6 +54,7 @@ export class CanvasElement extends ObjectBase {
     this.elementId = `canvasElement_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     this.width = width;
     this.height = height;
+    this.editMode = 'view'; // 默认查看模式
   }
   
   /**
@@ -107,6 +111,23 @@ export class CanvasElement extends ObjectBase {
     this.translateX = 0;
     this.translateY = 0;
     this.triggerLocalListeners('viewReset', this, {});
+  }
+  
+  /**
+   * 设置编辑模式
+   */
+  public setEditMode(mode: 'view' | 'edit'): void {
+    this.editMode = mode;
+    this.triggerLocalListeners('editModeChanged', this, {
+      editMode: mode,
+    });
+  }
+  
+  /**
+   * 获取编辑模式
+   */
+  public getEditMode(): 'view' | 'edit' {
+    return this.editMode;
   }
   
   /**

@@ -179,6 +179,25 @@
               </div>
             </div>
           </div>
+          <div
+            v-if="isCanvasElement"
+            class="info-item canvas-mode-section"
+          >
+            <label for="canvas-edit-mode-toggle">编辑模式:</label>
+            <div class="toggle-container">
+              <input
+                id="canvas-edit-mode-toggle"
+                type="checkbox"
+                v-model="canvasEditMode"
+                @change="updateCanvasEditMode"
+                class="toggle-switch"
+              />
+              <label for="canvas-edit-mode-toggle" class="toggle-label">
+                {{ canvasEditMode ? '编辑' : '查看' }}
+              </label>
+            </div>
+            <p class="mode-hint">编辑模式下可拖拽边缘调整画布大小</p>
+          </div>
           <div class="info-item content-section">
             <label for="content-input">内容:</label>
             <textarea
@@ -227,6 +246,9 @@ const splittable = ref(true);
 const varElementObjectType = ref('');
 const varElementObjectElements = ref<ObjectBase[]>([]);
 
+// CanvasElement 相关
+const canvasEditMode = ref(false);
+
 // 添加元素表单相关
 const elementForm = ref({
   elementType: '',
@@ -272,6 +294,11 @@ const supportsBackgroundColor = computed(() => {
 const isVarElement = computed(() => {
   const obj = selectedObject.value as any;
   return obj && (obj.type === 'var-element' || obj instanceof VarElement);
+});
+
+const isCanvasElement = computed(() => {
+  const obj = selectedObject.value as any;
+  return obj && (obj.type === 'canvas-element');
 });
 
 const colorPalette = [
@@ -334,23 +361,23 @@ const readObjectContent = (target: any) => {
       typeof content === 'object'
         ? JSON.stringify(content, null, 2)
         : String(content ?? '');
-  } else {
-    contentText.value = '';
-  }
+    } else {
+      contentText.value = '';
+    }
 
   if (typeof target?.displayText === 'string') {
     displayText.value = target.displayText ?? '';
-  } else {
-    displayText.value = '';
-  }
+    } else {
+      displayText.value = '';
+    }
 
   if (typeof target?.getTextColor === 'function') {
-    textColor.value = target.getTextColor() || '#1f2937';
+        textColor.value = target.getTextColor() || '#1f2937';
   } else if (typeof target?.textColor === 'string') {
-    textColor.value = target.textColor || '#1f2937';
-  } else {
-    textColor.value = '#1f2937';
-  }
+        textColor.value = target.textColor || '#1f2937';
+    } else {
+      textColor.value = '#1f2937';
+    }
 
   if (typeof target?.getBackgroundColor === 'function') {
     backgroundColor.value = target.getBackgroundColor() || '#e5e7eb';
@@ -380,6 +407,19 @@ const readObjectContent = (target: any) => {
     varElementObjectType.value = '';
     varElementObjectElements.value = [];
   }
+
+  // 如果是 CanvasElement，从对象本身读取模式
+  if (target && (target.type === 'canvas-element')) {
+    const canvasEl = target as any;
+    // 优先从 CanvasElement 对象读取模式
+    if (typeof canvasEl.getEditMode === 'function') {
+      canvasEditMode.value = canvasEl.getEditMode() === 'edit';
+    } else if (typeof canvasEl.editMode === 'string') {
+      canvasEditMode.value = canvasEl.editMode === 'edit';
+    } else {
+      canvasEditMode.value = false; // 默认查看模式
+    }
+  }
 };
 
 const applySelectedObject = (object: ObjectBase | null) => {
@@ -402,6 +442,14 @@ eventNode.on(NotesChannels.SELECTION_CHANGED, ({ payload }) => {
   applySelectedObject((element as ObjectBase) ?? null);
 });
 
+// 监听画布模式同步事件
+eventNode.on('canvas:mode-sync', ({ payload }) => {
+  const { canvasElement, mode } = payload as any;
+  if (selectedObject.value && selectedObject.value === canvasElement) {
+    canvasEditMode.value = mode === 'edit';
+  }
+});
+
 // Methods
 const toggleExpanded = () => {
   setExpanded(!expanded.value);
@@ -411,11 +459,11 @@ const updateContent = () => {
   if (!selectedObject.value) return;
   const target: any = selectedObject.value;
   if (typeof target.setContent === 'function') {
-    let content;
-    try {
-      content = JSON.parse(contentText.value);
-    } catch (e) {
-      content = contentText.value;
+      let content;
+      try {
+        content = JSON.parse(contentText.value);
+      } catch (e) {
+        content = contentText.value;
     }
     target.setContent(content);
     eventNode.emit(NotesChannels.SIDEBAR_CONTENT_UPDATED, {
@@ -471,6 +519,17 @@ const updateSplittable = () => {
     target.splittable = splittable.value;
   }
 };
+
+function updateCanvasEditMode() {
+  if (!selectedObject.value || !isCanvasElement.value) return;
+  const mode = canvasEditMode.value ? 'edit' : 'view';
+  console.log('[Sidebar] Updating canvas mode:', mode, 'Canvas:', selectedObject.value);
+  // 通过事件系统通知 CanvasManager 切换模式
+  eventNode.emit('canvas:mode-changed', {
+    canvasElement: selectedObject.value,
+    mode: mode,
+  });
+}
 
 // varElement 相关方法
 const getElementType = (element: ObjectBase): string => {
@@ -628,6 +687,19 @@ const onElementValueBlur = (element: ObjectBase, newValue: string) => {
       varEl.updateObjectElements();
     }
     varElementObjectElements.value = varEl.objectElements || [];
+  }
+
+  // 更新 CanvasElement 相关状态
+  if (selectedObject.value && isCanvasElement.value) {
+    // 从 CanvasElement 对象本身读取模式
+    const canvasEl = selectedObject.value as any;
+    if (typeof canvasEl.getEditMode === 'function') {
+      canvasEditMode.value = canvasEl.getEditMode() === 'edit';
+    } else if (typeof canvasEl.editMode === 'string') {
+      canvasEditMode.value = canvasEl.editMode === 'edit';
+    } else {
+      canvasEditMode.value = false; // 默认查看模式
+    }
   }
 };
 </script>
@@ -1052,6 +1124,20 @@ const onElementValueBlur = (element: ObjectBase, newValue: string) => {
 .remove-element-btn:active {
   background-color: #b91c1c;
   transform: scale(0.95);
+}
+
+.canvas-mode-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.mode-hint {
+  font-size: 12px;
+  color: #666;
+  margin-top: 8px;
+  font-style: italic;
+  line-height: 1.4;
 }
 
 .no-elements {

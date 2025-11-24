@@ -2,6 +2,7 @@
   <div 
     ref="canvasContainer"
     class="canvas-container"
+    :class="{ 'edit-mode': mode === 'edit' }"
     :data-element-id="canvasElement?.elementId || ''"
     :style="{
       width: canvasWidth + 'px',
@@ -10,7 +11,56 @@
     }"
     @click="handleClick"
     @dblclick="handleDoubleClick"
-  ></div>
+    @mousedown="handleMouseDown"
+  >
+    <!-- 调试信息 -->
+    <div v-if="mode === 'edit'" style="position: absolute; top: -25px; left: 0; font-size: 12px; color: red; z-index: 2000; background: yellow; padding: 2px 5px;">
+      编辑模式: {{ mode }}, ID: {{ canvasElement?.elementId?.substring(0, 8) }}
+    </div>
+    <!-- SVG 画布内容包装器 -->
+    <div class="svg-wrapper" ref="svgWrapper"></div>
+    <!-- 调整大小手柄 - 放在 SVG 之后，确保在最上层 -->
+    <div 
+      v-if="mode === 'edit'"
+      class="resize-handle resize-handle-n"
+      @mousedown.stop="startResize($event, 'n')"
+    ></div>
+    <div 
+      v-if="mode === 'edit'"
+      class="resize-handle resize-handle-s"
+      @mousedown.stop="startResize($event, 's')"
+    ></div>
+    <div 
+      v-if="mode === 'edit'"
+      class="resize-handle resize-handle-w"
+      @mousedown.stop="startResize($event, 'w')"
+    ></div>
+    <div 
+      v-if="mode === 'edit'"
+      class="resize-handle resize-handle-e"
+      @mousedown.stop="startResize($event, 'e')"
+    ></div>
+    <div 
+      v-if="mode === 'edit'"
+      class="resize-handle resize-handle-nw"
+      @mousedown.stop="startResize($event, 'nw')"
+    ></div>
+    <div 
+      v-if="mode === 'edit'"
+      class="resize-handle resize-handle-ne"
+      @mousedown.stop="startResize($event, 'ne')"
+    ></div>
+    <div 
+      v-if="mode === 'edit'"
+      class="resize-handle resize-handle-sw"
+      @mousedown.stop="startResize($event, 'sw')"
+    ></div>
+    <div 
+      v-if="mode === 'edit'"
+      class="resize-handle resize-handle-se"
+      @mousedown.stop="startResize($event, 'se')"
+    ></div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -23,6 +73,11 @@ const props = defineProps<{
   canvasElement: CanvasElement;
   mode: 'view' | 'edit';
 }>();
+
+// 调试：监听模式变化
+watch(() => props.mode, (newMode) => {
+  console.log('[CanvasElement] Mode changed:', newMode, 'Element ID:', props.canvasElement?.elementId);
+}, { immediate: true });
 
 // Emits 定义
 const emit = defineEmits<{
@@ -40,8 +95,26 @@ function handleDoubleClick(event: MouseEvent) {
 }
 
 const canvasContainer = ref<HTMLElement | null>(null);
+const svgWrapper = ref<HTMLElement | null>(null);
 let svg: d3.Selection<SVGSVGElement, unknown, null, undefined> | null = null;
 let zoomBehavior: d3.ZoomBehavior<SVGElement, unknown> | null = null;
+
+// 调整大小相关状态
+const isResizing = ref(false);
+const resizeDirection = ref<string>('');
+const resizeStartX = ref(0);
+const resizeStartY = ref(0);
+const resizeStartWidth = ref(0);
+const resizeStartHeight = ref(0);
+const resizeStartLeft = ref(0);
+const resizeStartTop = ref(0);
+
+// 拖拽相关状态
+const isDragging = ref(false);
+const dragStartX = ref(0);
+const dragStartY = ref(0);
+const dragStartLeft = ref(0);
+const dragStartTop = ref(0);
 
 // 计算属性
 const canvasWidth = computed(() => props.canvasElement?.canvasWidth || 800);
@@ -56,15 +129,50 @@ onMounted(() => {
   if (canvasContainer.value) {
     initializeCanvas();
   }
+  // 添加全局鼠标事件监听
+  document.addEventListener('mousemove', handleMouseMove);
+  document.addEventListener('mouseup', handleMouseUp);
 });
 
 // 监听属性变化
 watch([canvasWidth, canvasHeight], () => {
-  if (svg && canvasContainer.value) {
+  if (svg) {
     svg
       .attr('width', canvasWidth.value)
       .attr('height', canvasHeight.value)
       .attr('viewBox', `0 0 ${canvasWidth.value} ${canvasHeight.value}`);
+  }
+});
+
+// 监听模式变化，重新初始化画布（禁用/启用缩放行为）
+watch(() => props.mode, (newMode) => {
+  if (svg && props.canvasElement) {
+    if (newMode === 'edit') {
+      // 编辑模式下禁用缩放行为
+      if (zoomBehavior) {
+        svg.on('.zoom', null);
+        zoomBehavior = null;
+      }
+    } else {
+      // 查看模式下启用缩放行为
+      if (!zoomBehavior && props.canvasElement.zoomable) {
+        zoomBehavior = d3
+          .zoom<SVGElement, unknown>()
+          .scaleExtent([0.1, 5])
+          .on('zoom', (event) => {
+            const { transform } = event;
+            const g = svg!.select('.canvas-content');
+            g.attr('transform', transform.toString());
+            
+            if (props.canvasElement) {
+              props.canvasElement.zoomLevel = transform.k;
+              props.canvasElement.translateX = transform.x;
+              props.canvasElement.translateY = transform.y;
+            }
+          });
+        svg.call(zoomBehavior as any);
+      }
+    }
   }
 });
 
@@ -81,23 +189,41 @@ onUnmounted(() => {
     svg = null;
   }
   zoomBehavior = null;
+  // 移除全局鼠标事件监听
+  document.removeEventListener('mousemove', handleMouseMove);
+  document.removeEventListener('mouseup', handleMouseUp);
 });
 
 function initializeCanvas() {
   if (!canvasContainer.value) return;
 
-  // 清除现有内容
-  canvasContainer.value.innerHTML = '';
+  // 使用 ref 获取 SVG 包装器，如果不存在则创建
+  let svgWrapperEl = svgWrapper.value;
+  if (!svgWrapperEl) {
+    svgWrapperEl = document.createElement('div');
+    svgWrapperEl.className = 'svg-wrapper';
+    // 插入到第一个位置，确保手柄在它之上
+    if (canvasContainer.value.firstChild) {
+      canvasContainer.value.insertBefore(svgWrapperEl, canvasContainer.value.firstChild);
+    } else {
+      canvasContainer.value.appendChild(svgWrapperEl);
+    }
+  }
+  
+  // 清除现有 SVG 内容（保留手柄）
+  svgWrapperEl.innerHTML = '';
 
-  // 创建 SVG
+  // 创建 SVG（在包装器内）
   svg = d3
-    .select(canvasContainer.value)
+    .select(svgWrapperEl)
     .append('svg')
     .attr('width', canvasWidth.value)
     .attr('height', canvasHeight.value)
     .attr('viewBox', `0 0 ${canvasWidth.value} ${canvasHeight.value}`)
     .style('display', 'block')
-    .style('cursor', 'grab');
+    .style('cursor', 'grab')
+    .style('width', '100%')
+    .style('height', '100%');
 
   // 创建可缩放和可平移的组
   const g = svg.append('g').attr('class', 'canvas-content');
@@ -105,8 +231,8 @@ function initializeCanvas() {
   // 设置初始变换
   g.attr('transform', `translate(${translateX.value}, ${translateY.value}) scale(${zoomLevel.value})`);
 
-  // 创建缩放行为
-  if (props.canvasElement?.zoomable) {
+  // 创建缩放行为（仅在非编辑模式下启用，避免与调整大小手柄冲突）
+  if (props.canvasElement?.zoomable && props.mode !== 'edit') {
     zoomBehavior = d3
       .zoom<SVGElement, unknown>()
       .scaleExtent([0.1, 5]) // 缩放范围：0.1 到 5 倍
@@ -163,19 +289,338 @@ function addExampleContent(g: d3.Selection<SVGGElement, unknown, null, undefined
     .attr('fill', '#333')
     .text('可拖拽、可缩放的画布');
 }
+
+// 拖拽和调整大小相关函数
+function handleMouseDown(event: MouseEvent) {
+  // 如果正在调整大小，不处理拖拽
+  if (isResizing.value) {
+    return;
+  }
+  
+  // 检查是否点击在手柄上（手柄会阻止事件冒泡）
+  const target = event.target as HTMLElement;
+  if (target.classList.contains('resize-handle')) {
+    return;
+  }
+  
+  // 检查是否点击在 SVG 内容上
+  if (target.closest('.svg-wrapper') || target.closest('svg')) {
+    // 如果点击在 SVG 内容上，不启动拖拽（让 D3 的缩放行为处理）
+    return;
+  }
+  
+  // 在画布空白区域按下鼠标，启动拖拽
+  if (!canvasContainer.value) return;
+  
+  isDragging.value = true;
+  dragStartX.value = event.clientX;
+  dragStartY.value = event.clientY;
+  
+  // 获取容器的当前位置
+  const rect = canvasContainer.value.getBoundingClientRect();
+  const parentRect = canvasContainer.value.parentElement?.getBoundingClientRect() || { left: 0, top: 0 };
+  dragStartLeft.value = rect.left - parentRect.left;
+  dragStartTop.value = rect.top - parentRect.top;
+  
+  // 禁用文本选择
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = 'grabbing';
+  
+  event.preventDefault();
+}
+
+function startResize(event: MouseEvent, direction: string) {
+  event.preventDefault();
+  event.stopPropagation();
+  
+  if (!canvasContainer.value || !props.canvasElement) return;
+  
+  isResizing.value = true;
+  resizeDirection.value = direction;
+  resizeStartX.value = event.clientX;
+  resizeStartY.value = event.clientY;
+  resizeStartWidth.value = canvasWidth.value;
+  resizeStartHeight.value = canvasHeight.value;
+  
+  // 获取容器的当前位置
+  // 优先使用已设置的 style.top/left 值，确保速率一致
+  const computedStyle = window.getComputedStyle(canvasContainer.value);
+  const currentTop = computedStyle.top;
+  const currentLeft = computedStyle.left;
+  
+  // 如果已经设置了 top，直接使用设置的值；否则使用 getBoundingClientRect 计算
+  if (currentTop && currentTop !== 'auto') {
+    resizeStartTop.value = parseFloat(currentTop);
+  } else {
+    const rect = canvasContainer.value.getBoundingClientRect();
+    const parentRect = canvasContainer.value.parentElement?.getBoundingClientRect() || { left: 0, top: 0 };
+    resizeStartTop.value = rect.top - parentRect.top;
+  }
+  
+  // 如果已经设置了 left，直接使用设置的值；否则使用 getBoundingClientRect 计算
+  if (currentLeft && currentLeft !== 'auto') {
+    resizeStartLeft.value = parseFloat(currentLeft);
+  } else {
+    const rect = canvasContainer.value.getBoundingClientRect();
+    const parentRect = canvasContainer.value.parentElement?.getBoundingClientRect() || { left: 0, top: 0 };
+    resizeStartLeft.value = rect.left - parentRect.left;
+  }
+  
+  // 禁用文本选择
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = getResizeCursor(direction);
+}
+
+function handleMouseMove(event: MouseEvent) {
+  // 处理拖拽
+  if (isDragging.value && canvasContainer.value) {
+    const deltaX = event.clientX - dragStartX.value;
+    const deltaY = event.clientY - dragStartY.value;
+    
+    const newLeft = dragStartLeft.value + deltaX;
+    const newTop = dragStartTop.value + deltaY;
+    
+    // 更新画布位置
+    const currentPosition = window.getComputedStyle(canvasContainer.value).position;
+    if (currentPosition === 'static') {
+      canvasContainer.value.style.position = 'relative';
+    }
+    canvasContainer.value.style.left = newLeft + 'px';
+    canvasContainer.value.style.top = newTop + 'px';
+    
+    return;
+  }
+  
+  // 处理调整大小
+  if (!isResizing.value || !canvasContainer.value || !props.canvasElement) return;
+  
+  const deltaX = event.clientX - resizeStartX.value;
+  const deltaY = event.clientY - resizeStartY.value;
+  
+  let newWidth = resizeStartWidth.value;
+  let newHeight = resizeStartHeight.value;
+  let newLeft = resizeStartLeft.value;
+  let newTop = resizeStartTop.value;
+  
+  // 根据方向调整大小和位置
+  // 逻辑说明：
+  // - 上边缘（n）：向上拖拽时，高度增加，左上角向上移动
+  // - 下边缘（s）：向下拖拽时，高度增加，左上角不变
+  // - 左边缘（w）：向左拖拽时，宽度增加，左上角向左移动
+  // - 右边缘（e）：向右拖拽时，宽度增加，左上角不变
+  if (resizeDirection.value.includes('e')) {
+    // 右侧：只改变宽度，位置不变（向右扩展）
+    newWidth = Math.max(100, resizeStartWidth.value + deltaX);
+  }
+  if (resizeDirection.value.includes('w')) {
+    // 左侧：改变宽度和左边位置（向左扩展）
+    newWidth = Math.max(100, resizeStartWidth.value - deltaX);
+    newLeft = resizeStartLeft.value + deltaX;
+  }
+  if (resizeDirection.value.includes('s')) {
+    // 下方：只改变高度，位置不变（向下扩展）
+    newHeight = Math.max(100, resizeStartHeight.value + deltaY);
+  }
+  if (resizeDirection.value.includes('n')) {
+    // 上方：改变高度和上边位置（向上扩展）
+    newHeight = Math.max(100, resizeStartHeight.value - deltaY);
+    newTop = resizeStartTop.value + deltaY;
+  }
+  
+  // 更新画布大小
+  props.canvasElement.setCanvasSize(newWidth, newHeight);
+  
+  // 更新画布位置（通过设置容器的 left 和 top，需要先设置 position）
+  if (canvasContainer.value) {
+    const currentPosition = window.getComputedStyle(canvasContainer.value).position;
+    if (currentPosition === 'static') {
+      canvasContainer.value.style.position = 'relative';
+    }
+    canvasContainer.value.style.left = newLeft + 'px';
+    canvasContainer.value.style.top = newTop + 'px';
+  }
+}
+
+function handleMouseUp(event: MouseEvent) {
+  // 处理拖拽结束
+  if (isDragging.value) {
+    isDragging.value = false;
+    
+    // 恢复文本选择
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  }
+  
+  // 处理调整大小结束
+  if (isResizing.value) {
+    isResizing.value = false;
+    resizeDirection.value = '';
+    
+    // 恢复文本选择
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  }
+}
+
+function getResizeCursor(direction: string): string {
+  const cursors: Record<string, string> = {
+    'n': 'ns-resize',
+    's': 'ns-resize',
+    'w': 'ew-resize',
+    'e': 'ew-resize',
+    'nw': 'nwse-resize',
+    'ne': 'nesw-resize',
+    'sw': 'nesw-resize',
+    'se': 'nwse-resize',
+  };
+  return cursors[direction] || 'default';
+}
 </script>
 
 <style scoped>
 .canvas-container {
-  display: inline-block;
-  overflow: hidden;
+  display: block;
+  overflow: visible;
   background-color: #ffffff;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.canvas-container.edit-mode {
+  overflow: visible;
+}
+
+.canvas-container {
+  cursor: grab;
+}
+
+.canvas-container:active {
+  cursor: grabbing;
+}
+
+.svg-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
 }
 
 .canvas-container svg {
   display: block;
   width: 100%;
   height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  pointer-events: auto;
+}
+
+.edit-mode .svg-wrapper {
+  pointer-events: none;
+}
+
+.edit-mode .svg-wrapper svg {
+  pointer-events: none;
+}
+
+.edit-mode .svg-wrapper svg .canvas-content {
+  pointer-events: auto;
+}
+
+/* 调整大小手柄 */
+.resize-handle {
+  position: absolute;
+  background-color: rgba(59, 130, 246, 0.8) !important;
+  border: 2px solid rgba(59, 130, 246, 1) !important;
+  z-index: 9999 !important;
+  transition: background-color 0.2s;
+  pointer-events: auto !important;
+  box-shadow: 0 0 6px rgba(59, 130, 246, 1);
+  min-width: 8px;
+  min-height: 8px;
+}
+
+.resize-handle:hover {
+  background-color: rgba(59, 130, 246, 0.5);
+}
+
+/* 边缘手柄 */
+.resize-handle-n,
+.resize-handle-s {
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.resize-handle-n {
+  top: 0;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+}
+
+.resize-handle-s {
+  bottom: 0;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+}
+
+.resize-handle-w,
+.resize-handle-e {
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.resize-handle-w {
+  left: 0;
+  border-right: none;
+  border-radius: 4px 0 0 4px;
+}
+
+.resize-handle-e {
+  right: 0;
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+}
+
+/* 角落手柄 */
+.resize-handle-nw,
+.resize-handle-ne,
+.resize-handle-sw,
+.resize-handle-se {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.resize-handle-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.resize-handle-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.resize-handle-sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.resize-handle-se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
 }
 </style>
 
