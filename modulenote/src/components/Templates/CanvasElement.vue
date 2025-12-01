@@ -67,6 +67,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import * as d3 from 'd3';
 import type { CanvasElement } from '../Object/canvasElement';
+import { snapToGrid, snapRectToGrid, GRID_SIZE } from '@/utils/gridAlign';
 
 // Props 定义
 const props = defineProps<{
@@ -128,6 +129,10 @@ const translateY = computed(() => props.canvasElement?.translateY || 0);
 onMounted(() => {
   if (canvasContainer.value) {
     initializeCanvas();
+    // 应用保存的容器位置
+    applyContainerPosition();
+    // 初始化时对齐到网格
+    alignCanvasToGrid();
   }
   // 添加全局鼠标事件监听
   document.addEventListener('mousemove', handleMouseMove);
@@ -309,7 +314,12 @@ function handleMouseDown(event: MouseEvent) {
     return;
   }
   
-  // 在画布空白区域按下鼠标，启动拖拽
+  // 在编辑模式下，禁止拖拽移动画布位置
+  if (props.mode === 'edit') {
+    return;
+  }
+  
+  // 在画布空白区域按下鼠标，启动拖拽（仅在查看模式下）
   if (!canvasContainer.value) return;
   
   isDragging.value = true;
@@ -377,8 +387,12 @@ function handleMouseMove(event: MouseEvent) {
     const deltaX = event.clientX - dragStartX.value;
     const deltaY = event.clientY - dragStartY.value;
     
-    const newLeft = dragStartLeft.value + deltaX;
-    const newTop = dragStartTop.value + deltaY;
+    const rawLeft = dragStartLeft.value + deltaX;
+    const rawTop = dragStartTop.value + deltaY;
+    
+    // 对齐到网格
+    const newLeft = snapToGrid(rawLeft);
+    const newTop = snapToGrid(rawTop);
     
     // 更新画布位置
     const currentPosition = window.getComputedStyle(canvasContainer.value).position;
@@ -410,25 +424,33 @@ function handleMouseMove(event: MouseEvent) {
   // - 右边缘（e）：向右拖拽时，宽度增加，左上角不变
   if (resizeDirection.value.includes('e')) {
     // 右侧：只改变宽度，位置不变（向右扩展）
-    newWidth = Math.max(100, resizeStartWidth.value + deltaX);
+    newWidth = Math.max(GRID_SIZE, resizeStartWidth.value + deltaX);
   }
   if (resizeDirection.value.includes('w')) {
     // 左侧：改变宽度和左边位置（向左扩展）
-    newWidth = Math.max(100, resizeStartWidth.value - deltaX);
+    newWidth = Math.max(GRID_SIZE, resizeStartWidth.value - deltaX);
     newLeft = resizeStartLeft.value + deltaX;
   }
   if (resizeDirection.value.includes('s')) {
     // 下方：只改变高度，位置不变（向下扩展）
-    newHeight = Math.max(100, resizeStartHeight.value + deltaY);
+    newHeight = Math.max(GRID_SIZE, resizeStartHeight.value + deltaY);
   }
   if (resizeDirection.value.includes('n')) {
     // 上方：改变高度和上边位置（向上扩展）
-    newHeight = Math.max(100, resizeStartHeight.value - deltaY);
+    newHeight = Math.max(GRID_SIZE, resizeStartHeight.value - deltaY);
     newTop = resizeStartTop.value + deltaY;
   }
   
+  // 对齐到网格
+  const alignedRect = snapRectToGrid({
+    x: newLeft,
+    y: newTop,
+    width: newWidth,
+    height: newHeight
+  });
+  
   // 更新画布大小
-  props.canvasElement.setCanvasSize(newWidth, newHeight);
+  props.canvasElement.setCanvasSize(alignedRect.width, alignedRect.height);
   
   // 更新画布位置（通过设置容器的 left 和 top，需要先设置 position）
   if (canvasContainer.value) {
@@ -436,8 +458,8 @@ function handleMouseMove(event: MouseEvent) {
     if (currentPosition === 'static') {
       canvasContainer.value.style.position = 'relative';
     }
-    canvasContainer.value.style.left = newLeft + 'px';
-    canvasContainer.value.style.top = newTop + 'px';
+    canvasContainer.value.style.left = alignedRect.x + 'px';
+    canvasContainer.value.style.top = alignedRect.y + 'px';
   }
 }
 
@@ -445,6 +467,19 @@ function handleMouseUp(event: MouseEvent) {
   // 处理拖拽结束
   if (isDragging.value) {
     isDragging.value = false;
+    
+    // 保存当前位置到 CanvasElement 对象
+    if (canvasContainer.value && props.canvasElement) {
+      const rect = canvasContainer.value.getBoundingClientRect();
+      const parentRect = canvasContainer.value.parentElement?.getBoundingClientRect() || { left: 0, top: 0 };
+      const currentX = rect.left - parentRect.left;
+      const currentY = rect.top - parentRect.top;
+      
+      // 对齐到网格并保存
+      const alignedX = snapToGrid(currentX);
+      const alignedY = snapToGrid(currentY);
+      props.canvasElement.setContainerPosition(alignedX, alignedY);
+    }
     
     // 恢复文本选择
     document.body.style.userSelect = '';
@@ -455,6 +490,19 @@ function handleMouseUp(event: MouseEvent) {
   if (isResizing.value) {
     isResizing.value = false;
     resizeDirection.value = '';
+    
+    // 保存当前位置到 CanvasElement 对象（调整大小可能改变位置）
+    if (canvasContainer.value && props.canvasElement) {
+      const rect = canvasContainer.value.getBoundingClientRect();
+      const parentRect = canvasContainer.value.parentElement?.getBoundingClientRect() || { left: 0, top: 0 };
+      const currentX = rect.left - parentRect.left;
+      const currentY = rect.top - parentRect.top;
+      
+      // 对齐到网格并保存
+      const alignedX = snapToGrid(currentX);
+      const alignedY = snapToGrid(currentY);
+      props.canvasElement.setContainerPosition(alignedX, alignedY);
+    }
     
     // 恢复文本选择
     document.body.style.userSelect = '';
@@ -474,6 +522,61 @@ function getResizeCursor(direction: string): string {
     'se': 'nwse-resize',
   };
   return cursors[direction] || 'default';
+}
+
+// 应用保存的容器位置
+function applyContainerPosition() {
+  if (!canvasContainer.value || !props.canvasElement) return;
+  
+  const savedX = props.canvasElement.containerX;
+  const savedY = props.canvasElement.containerY;
+  
+  // 如果有保存的位置，应用它
+  if (savedX !== 0 || savedY !== 0) {
+    const currentPosition = window.getComputedStyle(canvasContainer.value).position;
+    if (currentPosition === 'static') {
+      canvasContainer.value.style.position = 'relative';
+    }
+    canvasContainer.value.style.left = savedX + 'px';
+    canvasContainer.value.style.top = savedY + 'px';
+  }
+}
+
+// 将画布对齐到网格
+function alignCanvasToGrid() {
+  if (!canvasContainer.value || !props.canvasElement) return;
+  
+  // 获取当前位置和尺寸
+  const rect = canvasContainer.value.getBoundingClientRect();
+  const parentRect = canvasContainer.value.parentElement?.getBoundingClientRect() || { left: 0, top: 0 };
+  
+  const currentRect = {
+    x: rect.left - parentRect.left,
+    y: rect.top - parentRect.top,
+    width: canvasWidth.value,
+    height: canvasHeight.value
+  };
+  
+  // 对齐到网格
+  const alignedRect = snapRectToGrid(currentRect);
+  
+  // 更新画布大小
+  if (alignedRect.width !== currentRect.width || alignedRect.height !== currentRect.height) {
+    props.canvasElement.setCanvasSize(alignedRect.width, alignedRect.height);
+  }
+  
+  // 更新画布位置
+  if (alignedRect.x !== currentRect.x || alignedRect.y !== currentRect.y) {
+    const currentPosition = window.getComputedStyle(canvasContainer.value).position;
+    if (currentPosition === 'static') {
+      canvasContainer.value.style.position = 'relative';
+    }
+    canvasContainer.value.style.left = alignedRect.x + 'px';
+    canvasContainer.value.style.top = alignedRect.y + 'px';
+    
+    // 保存对齐后的位置
+    props.canvasElement.setContainerPosition(alignedRect.x, alignedRect.y);
+  }
 }
 </script>
 
@@ -496,6 +599,19 @@ function getResizeCursor(direction: string): string {
 
 .canvas-container:active {
   cursor: grabbing;
+}
+
+/* 编辑模式下禁止拖拽移动 */
+.edit-mode .canvas-container {
+  cursor: default !important;
+}
+
+.edit-mode .canvas-container:hover {
+  cursor: default !important;
+}
+
+.edit-mode .canvas-container:active {
+  cursor: default !important;
 }
 
 .svg-wrapper {

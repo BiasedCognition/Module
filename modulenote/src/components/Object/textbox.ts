@@ -19,6 +19,14 @@ export class Textbox extends ObjectBase {
   /** 操作按钮集合 */
   public actionButtons: tButton[] = [];
   
+  /** 容器位置 */
+  public containerX: number = 0;
+  public containerY: number = 0;
+  
+  /** 容器尺寸 */
+  public containerWidth: number = 400;
+  public containerHeight: number = 200;
+  
   /** 构造函数 */
   constructor() {
     super();
@@ -80,6 +88,39 @@ export class Textbox extends ObjectBase {
   /** 切换查看/编辑模式 */
   public toggleMode(): void {
     this.mode = this.mode === 'view' ? 'edit' : 'view';
+  }
+  
+  /** 设置编辑模式 */
+  public setEditMode(mode: 'view' | 'edit'): void {
+    this.mode = mode;
+    this.triggerLocalListeners('editModeChanged', this, {
+      editMode: mode,
+    });
+  }
+  
+  /** 获取编辑模式 */
+  public getEditMode(): 'view' | 'edit' {
+    return this.mode;
+  }
+  
+  /** 设置容器位置 */
+  public setContainerPosition(x: number, y: number): void {
+    this.containerX = x;
+    this.containerY = y;
+    this.triggerLocalListeners('containerPositionChanged', this, {
+      containerX: x,
+      containerY: y,
+    });
+  }
+  
+  /** 设置容器尺寸 */
+  public setContainerSize(width: number, height: number): void {
+    this.containerWidth = width;
+    this.containerHeight = height;
+    this.triggerLocalListeners('containerSizeChanged', this, {
+      containerWidth: width,
+      containerHeight: height,
+    });
   }
   
   /**
@@ -226,12 +267,8 @@ export class Textbox extends ObjectBase {
     }
     
     // 获取两个元素的文本
-    const sourceText = typeof sourceElement.getDisplayText === 'function' 
-      ? sourceElement.getDisplayText() 
-      : sourceElement.displayText || '';
-    const targetText = typeof targetElement.getDisplayText === 'function'
-      ? targetElement.getDisplayText()
-      : targetElement.displayText || '';
+    const sourceText = sourceElement.displayText || '';
+    const targetText = targetElement.displayText || '';
     
     // 合并文本（源元素在前，目标元素在后）
     const mergedText = (sourceText + targetText).trim();

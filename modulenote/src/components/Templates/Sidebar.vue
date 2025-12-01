@@ -198,6 +198,27 @@
             </div>
             <p class="mode-hint">编辑模式下可拖拽边缘调整画布大小</p>
           </div>
+
+          <!-- Textbox 编辑模式切换 -->
+          <div 
+            v-if="isTextboxElement"
+            class="info-item textbox-mode-section"
+          >
+            <label for="textbox-edit-mode-toggle">编辑模式:</label>
+            <div class="mode-toggle">
+              <input
+                id="textbox-edit-mode-toggle"
+                type="checkbox"
+                v-model="textboxEditMode"
+                @change="updateTextboxEditMode"
+                class="toggle-switch"
+              />
+              <label for="textbox-edit-mode-toggle" class="toggle-label">
+                {{ textboxEditMode ? '编辑' : '查看' }}
+              </label>
+            </div>
+            <p class="mode-hint">编辑模式下可拖拽边缘调整文本框大小</p>
+          </div>
           <div class="info-item content-section">
             <label for="content-input">内容:</label>
             <textarea
@@ -248,6 +269,7 @@ const varElementObjectElements = ref<ObjectBase[]>([]);
 
 // CanvasElement 相关
 const canvasEditMode = ref(false);
+const textboxEditMode = ref(false);
 
 // 添加元素表单相关
 const elementForm = ref({
@@ -299,6 +321,11 @@ const isVarElement = computed(() => {
 const isCanvasElement = computed(() => {
   const obj = selectedObject.value as any;
   return obj && (obj.type === 'canvas-element');
+});
+
+const isTextboxElement = computed(() => {
+  const obj = selectedObject.value as any;
+  return obj && (obj.type === 'textbox');
 });
 
 const colorPalette = [
@@ -420,6 +447,19 @@ const readObjectContent = (target: any) => {
       canvasEditMode.value = false; // 默认查看模式
     }
   }
+  
+  // 如果是 Textbox，从对象本身读取模式
+  if (target && (target.type === 'textbox')) {
+    const textboxEl = target as any;
+    // 优先从 Textbox 对象读取模式
+    if (typeof textboxEl.getEditMode === 'function') {
+      textboxEditMode.value = textboxEl.getEditMode() === 'edit';
+    } else if (typeof textboxEl.mode === 'string') {
+      textboxEditMode.value = textboxEl.mode === 'edit';
+    } else {
+      textboxEditMode.value = false; // 默认查看模式
+    }
+  }
 };
 
 const applySelectedObject = (object: ObjectBase | null) => {
@@ -529,6 +569,20 @@ function updateCanvasEditMode() {
     canvasElement: selectedObject.value,
     mode: mode,
   });
+}
+
+function updateTextboxEditMode() {
+  if (!selectedObject.value || !isTextboxElement.value) return;
+  const mode = textboxEditMode.value ? 'edit' : 'view';
+  console.log('[Sidebar] Updating textbox mode:', mode, 'Textbox:', selectedObject.value);
+  
+  // 直接更新 Textbox 对象的模式
+  const textboxObj = selectedObject.value as any;
+  if (typeof textboxObj.setEditMode === 'function') {
+    textboxObj.setEditMode(mode);
+  } else {
+    textboxObj.mode = mode;
+  }
 }
 
 // varElement 相关方法

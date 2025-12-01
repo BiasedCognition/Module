@@ -3,6 +3,7 @@ import { ref, provide, onMounted, onUnmounted } from 'vue';
 import ObjectCommunicationDemo from './test/ObjectCommunicationDemo.vue';
 import SimpleDemo from './test/SimpleDemo.vue';
 import SplitLineFillDemo from './test/SplitLineFillDemo.vue';
+import GridAlignDemo from './test/GridAlignDemo.vue';
 import Sidebar from './components/Templates/Sidebar.vue';
 import D3Example from './components/D3Example.vue';
 import CanvasManager from './components/Canvas/CanvasManager.vue';
@@ -169,6 +170,11 @@ provide('registerElement', (element: HTMLElement, object: ObjectBase) => {
       <div class="mt-10">
         <CanvasManager />
       </div>
+
+      <div class="mt-10">
+        <h2 class="text-2xl font-semibold mb-4">网格对齐功能演示</h2>
+        <GridAlignDemo />
+      </div>
     </div>
     
     <!-- 边栏组件 - 始终存在 -->
@@ -201,5 +207,14 @@ provide('registerElement', (element: HTMLElement, object: ObjectBase) => {
 .main-content > div {
   max-width: 800px;
   margin: 0 auto;
+}
+
+:global(body) {
+  margin: 0;
+  background-color: #f8fafc;
+  background-image: radial-gradient(rgba(59, 130, 246, 0.3) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: 0 0;
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 </style>

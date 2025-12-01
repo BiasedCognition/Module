@@ -33,6 +33,10 @@ export class CanvasElement extends ObjectBase {
   public translateX: number = 0;
   public translateY: number = 0;
   
+  /** 画布容器位置 */
+  public containerX: number = 0;
+  public containerY: number = 0;
+  
   /** 画布内容（可以存储 SVG 元素、图形等） */
   public canvasContent: any = null;
   
@@ -100,6 +104,18 @@ export class CanvasElement extends ObjectBase {
     this.triggerLocalListeners('translateChanged', this, {
       translateX: x,
       translateY: y,
+    });
+  }
+  
+  /**
+   * 设置容器位置
+   */
+  public setContainerPosition(x: number, y: number): void {
+    this.containerX = x;
+    this.containerY = y;
+    this.triggerLocalListeners('containerPositionChanged', this, {
+      containerX: x,
+      containerY: y,
     });
   }
   
